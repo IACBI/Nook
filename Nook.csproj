@@ -16,4 +16,11 @@
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- This project sits at the repository root, so the default glob would otherwise
+         pull the test project's sources into the application build. -->
+    <Compile Remove="tests/**" />
+    <InternalsVisibleTo Include="Nook.Tests" />
+  </ItemGroup>
 </Project>

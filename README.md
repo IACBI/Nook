@@ -74,7 +74,7 @@ Deleting the file restores every default.
 
 ### Contributing
 
-Issues and pull requests are welcome. Please keep to the style already in the files, and make sure `dotnet build -c Release` finishes without warnings before you open a pull request. If you are touching the native code, read [docs/architecture.md](docs/architecture.md) first.
+Issues and pull requests are welcome. Please keep to the style already in the files, and make sure `dotnet build -c Release` finishes without warnings and `dotnet test tests/Nook.Tests` passes before you open a pull request. If you are touching the native code, read [docs/architecture.md](docs/architecture.md) first.
 
 ### License
 
@@ -145,7 +145,7 @@ Dosyayı silmek tüm varsayılanları geri getirir.
 
 ### Katkı
 
-Hata bildirimleri ve pull request'ler memnuniyetle karşılanır. Lütfen dosyalardaki mevcut üsluba sadık kalın ve pull request açmadan önce `dotnet build -c Release` komutunun uyarı vermeden bittiğinden emin olun. Yerel (native) koda dokunacaksanız önce [docs/architecture.md](docs/architecture.md) dosyasını okuyun.
+Hata bildirimleri ve pull request'ler memnuniyetle karşılanır. Lütfen dosyalardaki mevcut üsluba sadık kalın ve pull request açmadan önce `dotnet build -c Release` komutunun uyarı vermeden bittiğinden ve `dotnet test tests/Nook.Tests` testlerinin geçtiğinden emin olun. Yerel (native) koda dokunacaksanız önce [docs/architecture.md](docs/architecture.md) dosyasını okuyun.
 
 ### Lisans
 
@@ -216,7 +216,7 @@ dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=
 
 ### 参与贡献
 
-欢迎提交 issue 和 pull request。请沿用现有代码风格，并在提交 pull request 前确认 `dotnet build -c Release` 没有任何警告。若要改动原生代码，请先阅读 [docs/architecture.md](docs/architecture.md)。
+欢迎提交 issue 和 pull request。请沿用现有代码风格，并在提交 pull request 前确认 `dotnet build -c Release` 没有任何警告、`dotnet test tests/Nook.Tests` 全部通过。若要改动原生代码，请先阅读 [docs/architecture.md](docs/architecture.md)。
 
 ### 许可证
 
@@ -287,7 +287,7 @@ dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=
 
 ### योगदान
 
-इशू और पुल रिक्वेस्ट का स्वागत है। कृपया फ़ाइलों में पहले से मौजूद शैली बनाए रखें, और पुल रिक्वेस्ट खोलने से पहले देख लें कि `dotnet build -c Release` बिना किसी चेतावनी के पूरा होता है। नेटिव कोड में बदलाव करना हो तो पहले [docs/architecture.md](docs/architecture.md) पढ़ लें।
+इशू और पुल रिक्वेस्ट का स्वागत है। कृपया फ़ाइलों में पहले से मौजूद शैली बनाए रखें, और पुल रिक्वेस्ट खोलने से पहले देख लें कि `dotnet build -c Release` बिना किसी चेतावनी के पूरा होता है और `dotnet test tests/Nook.Tests` पास होता है। नेटिव कोड में बदलाव करना हो तो पहले [docs/architecture.md](docs/architecture.md) पढ़ लें।
 
 ### लाइसेंस
 
@@ -358,7 +358,7 @@ Al borrar el archivo se restauran todos los valores predeterminados.
 
 ### Contribuir
 
-Las incidencias y los pull requests son bienvenidos. Mantén el estilo que ya tienen los archivos y comprueba que `dotnet build -c Release` termina sin advertencias antes de abrir un pull request. Si vas a tocar el código nativo, lee antes [docs/architecture.md](docs/architecture.md).
+Las incidencias y los pull requests son bienvenidos. Mantén el estilo que ya tienen los archivos y comprueba que `dotnet build -c Release` termina sin advertencias y que `dotnet test tests/Nook.Tests` pasa antes de abrir un pull request. Si vas a tocar el código nativo, lee antes [docs/architecture.md](docs/architecture.md).
 
 ### Licencia
 
@@ -435,7 +435,7 @@ dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=
 
 ### المساهمة
 
-المساهمات وطلبات الدمج مُرحَّب بها. التزم بالأسلوب الموجود في الملفات، وتأكد من أن الأمر `dotnet build -c Release` ينتهي دون أي تحذير قبل فتح طلب الدمج. وإن كنت ستعدّل الشيفرة الأصلية (native) فاقرأ أولًا ملف [docs/architecture.md](docs/architecture.md).
+المساهمات وطلبات الدمج مُرحَّب بها. التزم بالأسلوب الموجود في الملفات، وتأكد من أن الأمر `dotnet build -c Release` ينتهي دون أي تحذير وأن `dotnet test tests/Nook.Tests` ينجح قبل فتح طلب الدمج. وإن كنت ستعدّل الشيفرة الأصلية (native) فاقرأ أولًا ملف [docs/architecture.md](docs/architecture.md).
 
 ### الرخصة
 
@@ -508,7 +508,7 @@ Apagar o arquivo restaura todos os padrões.
 
 ### Contribuindo
 
-Issues e pull requests são bem-vindos. Mantenha o estilo que já existe nos arquivos e confirme que `dotnet build -c Release` termina sem avisos antes de abrir um pull request. Se for mexer no código nativo, leia antes [docs/architecture.md](docs/architecture.md).
+Issues e pull requests são bem-vindos. Mantenha o estilo que já existe nos arquivos e confirme que `dotnet build -c Release` termina sem avisos e que `dotnet test tests/Nook.Tests` passa antes de abrir um pull request. Se for mexer no código nativo, leia antes [docs/architecture.md](docs/architecture.md).
 
 ### Licença
 
@@ -579,7 +579,7 @@ dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=
 
 ### Участие в разработке
 
-Issue и pull request приветствуются. Придерживайтесь стиля, который уже есть в файлах, и убедитесь, что `dotnet build -c Release` завершается без предупреждений, прежде чем открывать pull request. Если правите нативный код, сначала прочитайте [docs/architecture.md](docs/architecture.md).
+Issue и pull request приветствуются. Придерживайтесь стиля, который уже есть в файлах, и убедитесь, что `dotnet build -c Release` завершается без предупреждений, а `dotnet test tests/Nook.Tests` проходит, прежде чем открывать pull request. Если правите нативный код, сначала прочитайте [docs/architecture.md](docs/architecture.md).
 
 ### Лицензия
 

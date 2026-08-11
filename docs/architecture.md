@@ -52,3 +52,13 @@ Neither `nvml.dll` nor `atiadlxx.dll` ships with Windows, so both are loaded wit
 `OverlayForm` is a `WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW` window drawn with `UpdateLayeredWindow`, which is what gives it per-pixel alpha over a fullscreen game without a compositor round trip. It never takes focus: `WM_MOUSEACTIVATE` is answered with `MA_NOACTIVATE`, and in locked mode `WM_NCHITTEST` returns `HTTRANSPARENT` so clicks land on whatever is underneath.
 
 Rows are measured and laid out from the row list, so adding a metric is a matter of adding a row; the window resizes itself to fit. Rendering is skipped when neither the text nor the lock state changed, which is the common case between samples.
+
+## Tests
+
+`tests/Nook.Tests` covers the pure functions whose failures are silent rather than loud: the counter instance-name parsing, the byte formatting and the GPU name shortening. A mistake in the LUID parser does not throw — it attributes memory to the wrong adapter — so the instance-name strings Windows actually produces are pinned as test data.
+
+```powershell
+dotnet test tests/Nook.Tests
+```
+
+The rest is deliberately not covered. Driver and counter access needs the hardware to answer, and the window and overlay need a desktop session; a mock of either would only prove that the mock behaves. The test project sees the internals through `InternalsVisibleTo`.

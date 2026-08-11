@@ -273,7 +273,8 @@ internal sealed class PdhGpuMemoryReader : IDisposable
         return name.Length > 0 && name.Length <= MaxInstanceNameCharacters;
     }
 
-    private static bool TryGetProcessId(ReadOnlySpan<char> name, out int processId)
+    /// <summary>Reads the PID out of a <c>pid_1760_luid_0x…</c> counter instance name.</summary>
+    internal static bool TryGetProcessId(ReadOnlySpan<char> name, out int processId)
     {
         processId = 0;
         if (!name.StartsWith("pid_", StringComparison.OrdinalIgnoreCase))
@@ -285,7 +286,8 @@ internal sealed class PdhGpuMemoryReader : IDisposable
         return end > 0 && int.TryParse(name.Slice(4, end), NumberStyles.None, CultureInfo.InvariantCulture, out processId);
     }
 
-    private static bool TryGetLuid(ReadOnlySpan<char> name, out GpuLuid luid)
+    /// <summary>Reads the adapter LUID out of a <c>…luid_0xHIGH_0xLOW_phys_0</c> instance name.</summary>
+    internal static bool TryGetLuid(ReadOnlySpan<char> name, out GpuLuid luid)
     {
         luid = default;
         const string prefix = "luid_0x";

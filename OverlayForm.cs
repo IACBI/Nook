@@ -129,7 +129,7 @@ internal sealed class OverlayForm : Form
     private static bool HasReading(string value) => !string.IsNullOrWhiteSpace(value) && value != "—";
 
     /// <summary>Trims vendor boilerplate so the model number fits the overlay.</summary>
-    private static string FormatShortGpuName(string fullName)
+    internal static string FormatShortGpuName(string fullName)
     {
         if (string.IsNullOrWhiteSpace(fullName))
         {

@@ -1313,7 +1313,7 @@ internal sealed class MainForm : Form
         catch { return null; }
     }
 
-    private static string FormatBytes(double bytes)
+    internal static string FormatBytes(double bytes)
     {
         const double megabyte = 1024d * 1024d;
         const double gigabyte = megabyte * 1024d;
