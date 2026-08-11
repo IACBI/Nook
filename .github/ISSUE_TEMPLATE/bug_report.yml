@@ -1,0 +1,45 @@
+name: Bug report
+description: Something reads wrong or does not work
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you expected, and what you saw instead.
+    validations:
+      required: true
+
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU and driver version
+      description: As listed in Nook's GPU tab, plus the driver version from the vendor control panel.
+      placeholder: NVIDIA GeForce RTX 3050 Ti Laptop GPU, driver 566.36
+    validations:
+      required: true
+
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      description: Run `winver` and copy the version and build.
+      placeholder: Windows 11 24H2, build 26100.2314
+    validations:
+      required: true
+
+  - type: dropdown
+    id: source
+    attributes:
+      label: Where did the build come from
+      options:
+        - Release download
+        - Built from source
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Screenshot of the window or overlay, the status line at the bottom, other GPU tools running at the same time.

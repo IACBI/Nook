@@ -3,9 +3,10 @@
 
 Per-process VRAM, GPU load, temperature and clock on Windows — one portable executable, with an overlay you can pin over a game.
 
+[![build](https://github.com/IACBI/Nook/actions/workflows/build.yml/badge.svg)](https://github.com/IACBI/Nook/actions/workflows/build.yml)
+[![latest release](https://img.shields.io/github/v/release/IACBI/Nook)](https://github.com/IACBI/Nook/releases/latest)
 ![Windows 10 | 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4)
 ![.NET 10](https://img.shields.io/badge/.NET-10-512BD4)
-![x64](https://img.shields.io/badge/arch-x64-555555)
 ![MIT](https://img.shields.io/badge/license-MIT-green)
 
 **Read this in:** [English](#english) · [Türkçe](#türkçe) · [中文](#中文) · [हिन्दी](#हिन्दी) · [Español](#español) · [العربية](#العربية) · [Português](#português) · [Русский](#русский)
