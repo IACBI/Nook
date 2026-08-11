@@ -1,0 +1,9 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+release/
+
+# IDE
+.vs/
+*.user
+*.suo
