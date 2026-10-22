@@ -18,7 +18,7 @@ internal sealed class PdhGpuMemoryReader : IDisposable
     private const int CounterValueSizeX64 = 16;
     private const int CounterValueItemSizeX64 = 24;
     private const uint MaxCounterBufferBytes = 16 * 1024 * 1024;
-    private const int MaxInstanceNameCharacters = 4096;
+    internal const int MaxInstanceNameCharacters = 4096;
 
     private IntPtr _query;
     private IntPtr _processDedicatedCounter;
@@ -269,8 +269,29 @@ internal sealed class PdhGpuMemoryReader : IDisposable
             return false;
         }
 
-        name = MemoryMarshal.CreateReadOnlySpanFromNullTerminated((char*)item->Name);
-        return name.Length > 0 && name.Length <= MaxInstanceNameCharacters;
+        // The terminator search must not leave the PDH buffer, so the span is capped at what is left in it.
+        var available = (bufferEnd - address) / sizeof(char);
+        var region = new ReadOnlySpan<char>((char*)item->Name, (int)Math.Min(available, MaxInstanceNameCharacters + 1));
+        return TryReadInstanceName(region, out name);
+    }
+
+    /// <summary>
+    /// Returns the instance name that ends at the first NUL in <paramref name="region"/>. The search
+    /// stops after <see cref="MaxInstanceNameCharacters"/> + 1 characters, so an over-long or
+    /// unterminated name is rejected instead of being scanned to the end of the region.
+    /// </summary>
+    internal static bool TryReadInstanceName(ReadOnlySpan<char> region, out ReadOnlySpan<char> name)
+    {
+        name = default;
+        var searchLength = Math.Min(region.Length, MaxInstanceNameCharacters + 1);
+        var terminator = region[..searchLength].IndexOf('\0');
+        if (terminator < 0)
+        {
+            return false;
+        }
+
+        name = region[..terminator];
+        return name.Length > 0;
     }
 
     /// <summary>Reads the PID out of a <c>pid_1760_luid_0x…</c> counter instance name.</summary>
