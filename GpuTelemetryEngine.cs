@@ -23,7 +23,8 @@ internal sealed class GpuTelemetryEngine : IDisposable
     {
         try
         {
-            if (NativeLibrary.TryLoad("nvml.dll", typeof(GpuTelemetryEngine).Assembly, DllImportSearchPath.System32 | DllImportSearchPath.SafeDirectories, out _nvmlLibHandle)
+            // System32 only: the application directory must never be a source of native code (DLL preloading). Both vendors' drivers install these libraries there.
+            if (NativeLibrary.TryLoad("nvml.dll", typeof(GpuTelemetryEngine).Assembly, DllImportSearchPath.System32, out _nvmlLibHandle)
                 && NvmlNative.nvmlInit_v2() == NvmlNative.NvmlReturn.Success)
             {
                 LoadNvmlDevices();
@@ -38,7 +39,7 @@ internal sealed class GpuTelemetryEngine : IDisposable
         try
         {
             if (!_nvmlAvailable
-                && NativeLibrary.TryLoad("atiadlxx.dll", typeof(GpuTelemetryEngine).Assembly, DllImportSearchPath.SafeDirectories, out _adlLibHandle)
+                && NativeLibrary.TryLoad("atiadlxx.dll", typeof(GpuTelemetryEngine).Assembly, DllImportSearchPath.System32, out _adlLibHandle)
                 && NvmlNative.ADL2_Main_Control_Create(AdlAllocDelegate, 1, out _adlContext) == 0)
             {
                 _adlAvailable = true;
@@ -249,51 +250,51 @@ internal sealed class GpuTelemetryEngine : IDisposable
             public int iCurrentCorePerformanceLevel;
         }
 
-        [DefaultDllImportSearchPaths(DllImportSearchPath.System32 | DllImportSearchPath.SafeDirectories)]
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
         [DllImport("nvml.dll", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         public static extern NvmlReturn nvmlInit_v2();
 
-        [DefaultDllImportSearchPaths(DllImportSearchPath.System32 | DllImportSearchPath.SafeDirectories)]
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
         [DllImport("nvml.dll", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         public static extern NvmlReturn nvmlShutdown();
 
-        [DefaultDllImportSearchPaths(DllImportSearchPath.System32 | DllImportSearchPath.SafeDirectories)]
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
         [DllImport("nvml.dll", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         public static extern NvmlReturn nvmlDeviceGetCount_v2(out uint count);
 
-        [DefaultDllImportSearchPaths(DllImportSearchPath.System32 | DllImportSearchPath.SafeDirectories)]
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
         [DllImport("nvml.dll", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         public static extern NvmlReturn nvmlDeviceGetHandleByIndex_v2(uint index, out IntPtr device);
 
-        [DefaultDllImportSearchPaths(DllImportSearchPath.System32 | DllImportSearchPath.SafeDirectories)]
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
         [DllImport("nvml.dll", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         public static extern NvmlReturn nvmlDeviceGetName(IntPtr device, byte[] name, uint length);
 
-        [DefaultDllImportSearchPaths(DllImportSearchPath.System32 | DllImportSearchPath.SafeDirectories)]
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
         [DllImport("nvml.dll", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         public static extern NvmlReturn nvmlDeviceGetTemperature(IntPtr device, NvmlTemperatureSensors sensorType, out uint temp);
 
-        [DefaultDllImportSearchPaths(DllImportSearchPath.System32 | DllImportSearchPath.SafeDirectories)]
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
         [DllImport("nvml.dll", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         public static extern NvmlReturn nvmlDeviceGetClockInfo(IntPtr device, NvmlClockType type, out uint clock);
 
-        [DefaultDllImportSearchPaths(DllImportSearchPath.System32 | DllImportSearchPath.SafeDirectories)]
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
         [DllImport("nvml.dll", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         public static extern NvmlReturn nvmlDeviceGetUtilizationRates(IntPtr device, out NvmlUtilization utilization);
 
-        [DefaultDllImportSearchPaths(DllImportSearchPath.SafeDirectories)]
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
         [DllImport("atiadlxx.dll", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         public static extern int ADL2_Main_Control_Create(ADL_Main_Memory_Alloc callback, int enumConnectedAdapters, out IntPtr context);
 
-        [DefaultDllImportSearchPaths(DllImportSearchPath.SafeDirectories)]
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
         [DllImport("atiadlxx.dll", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         public static extern int ADL2_Main_Control_Destroy(IntPtr context);
 
-        [DefaultDllImportSearchPaths(DllImportSearchPath.SafeDirectories)]
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
         [DllImport("atiadlxx.dll", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         public static extern int ADL2_OverdriveN_Temperature_Get(IntPtr context, int adapterIndex, int temperatureType, out int temperature);
 
-        [DefaultDllImportSearchPaths(DllImportSearchPath.SafeDirectories)]
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
         [DllImport("atiadlxx.dll", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
         public static extern int ADL2_OverdriveN_PerformanceStatus_Get(IntPtr context, int adapterIndex, out ADLODNPerformanceStatus odPerformanceStatus);
     }
