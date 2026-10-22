@@ -7,6 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <!-- The application runs with invariant globalization; the tests assert the
          number formatting it actually produces, so they must match. -->
     <InvariantGlobalization>true</InvariantGlobalization>
