@@ -7,12 +7,20 @@ internal static class GpuAdapterCatalog
     private const int DxgiErrorNotFound = unchecked((int)0x887A0002);
     private const uint DxgiAdapterFlagSoftware = 2;
     private const uint KmtQueryAdapterRegistryInfo = 8;
-    // IDXGIFactory1 and IDXGIAdapter1 inherit IDXGIObject (three IUnknown slots plus three object slots).
-    private const int EnumAdapters1VtableSlot = 11;
-    private const int GetDesc1VtableSlot = 9;
+    // Slot numbers from the vtables in the SDK's dxgi.h. IUnknown (3) and IDXGIObject (4) come first;
+    // IDXGIFactory adds 5 more before IDXGIFactory1::EnumAdapters1, IDXGIAdapter adds 3 before
+    // IDXGIAdapter1::GetDesc1. A wrong slot calls a different method, and nothing reports it.
+    internal const int EnumAdapters1VtableSlot = 12;
+    internal const int GetDesc1VtableSlot = 10;
     private static readonly Guid Factory1Id = new("770AAE78-F26F-4DBA-A829-253C83D1B387");
 
-    public static IReadOnlyList<GpuAdapterItem> GetAdapters()
+    public static IReadOnlyList<GpuAdapterItem> GetAdapters() => EnumerateAdapters(includeSoftware: false);
+
+    /// <summary>
+    /// Enumerates DXGI adapters. Software adapters are only worth including for tests: the
+    /// Microsoft Basic Render Driver is present even on a machine with no display hardware.
+    /// </summary>
+    internal static IReadOnlyList<GpuAdapterItem> EnumerateAdapters(bool includeSoftware)
     {
         var adapters = new List<GpuAdapterItem>();
         IntPtr factory = IntPtr.Zero;
@@ -38,7 +46,8 @@ internal static class GpuAdapterCatalog
 
                 try
                 {
-                    if (resultCode >= 0 && CallGetDesc1(adapter, out var description) >= 0 && (description.Flags & DxgiAdapterFlagSoftware) == 0)
+                    if (resultCode >= 0 && CallGetDesc1(adapter, out var description) >= 0 &&
+                        (includeSoftware || (description.Flags & DxgiAdapterFlagSoftware) == 0))
                     {
                         var name = GetDescription(description);
                         adapters.Add(new GpuAdapterItem(new GpuLuid(description.AdapterLuid.LowPart, unchecked((uint)description.AdapterLuid.HighPart)), name));
@@ -167,7 +176,8 @@ internal static class GpuAdapterCatalog
     [DllImport("gdi32.dll", ExactSpelling = true)]
     private static extern int D3DKMTCloseAdapter(ref uint adapterHandle);
 
-    [StructLayout(LayoutKind.Sequential)]
+    // Without CharSet.Unicode the default Ansi marshalling reads the WCHAR description one byte per character.
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private unsafe struct DxgiAdapterDesc1
     {
         public fixed char Description[128];

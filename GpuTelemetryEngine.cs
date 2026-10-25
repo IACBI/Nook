@@ -10,7 +10,16 @@ namespace Nook;
 /// </summary>
 internal sealed class GpuTelemetryEngine : IDisposable
 {
+    /// <summary>Size of <c>ADLODNPerformanceStatus</c> in the ADL SDK: eighteen 32-bit ints.</summary>
+    internal const int AdlPerformanceStatusNativeSize = 18 * sizeof(int);
+
     private static readonly NvmlNative.ADL_Main_Memory_Alloc AdlAllocDelegate = Marshal.AllocHGlobal;
+
+    /// <summary>
+    /// Size of the managed mirror of <c>ADLODNPerformanceStatus</c>. ADL is never called unless it
+    /// equals <see cref="AdlPerformanceStatusNativeSize"/>; temperature and clock are lost instead.
+    /// </summary>
+    internal static int AdlPerformanceStatusManagedSize => Marshal.SizeOf<NvmlNative.ADLODNPerformanceStatus>();
 
     private readonly List<NvmlDevice> _nvmlDevices = [];
     private readonly bool _nvmlAvailable;
@@ -39,6 +48,7 @@ internal sealed class GpuTelemetryEngine : IDisposable
         try
         {
             if (!_nvmlAvailable
+                && AdlPerformanceStatusManagedSize == AdlPerformanceStatusNativeSize
                 && NativeLibrary.TryLoad("atiadlxx.dll", typeof(GpuTelemetryEngine).Assembly, DllImportSearchPath.System32, out _adlLibHandle)
                 && NvmlNative.ADL2_Main_Control_Create(AdlAllocDelegate, 1, out _adlContext) == 0)
             {
@@ -237,6 +247,8 @@ internal sealed class GpuTelemetryEngine : IDisposable
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         public delegate IntPtr ADL_Main_Memory_Alloc(int size);
 
+        // Mirrors adl_structures.h field for field. The driver writes the whole native size
+        // into the caller's buffer, so a shorter declaration is a stack overrun, not a truncation.
         [StructLayout(LayoutKind.Sequential)]
         public struct ADLODNPerformanceStatus
         {
@@ -248,6 +260,16 @@ internal sealed class GpuTelemetryEngine : IDisposable
             public int iVCEClock;
             public int iGPUActivityPercent;
             public int iCurrentCorePerformanceLevel;
+            public int iCurrentMemoryPerformanceLevel;
+            public int iCurrentDCEFPerformanceLevel;
+            public int iCurrentGFXPerformanceLevel;
+            public int iUVDPerformanceLevel;
+            public int iVCEPerformanceLevel;
+            public int iCurrentBusSpeed;
+            public int iCurrentBusLanes;
+            public int iMaximumBusLanes;
+            public int iVDDC;
+            public int iVDDCI;
         }
 
         [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
