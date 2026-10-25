@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Nook;
 
@@ -22,6 +23,7 @@ internal sealed class AppSettings
     public uint HotkeyToggleLockModifiers { get; set; } = 0x0002 | 0x0004; // Ctrl + Shift
     public bool OnlyShowVramProcesses { get; set; } = true;
 
+    [JsonIgnore]
     public GpuLuid? SelectedGpu => SelectedGpuLowPart.HasValue && SelectedGpuHighPart.HasValue
         ? new GpuLuid(SelectedGpuLowPart.Value, SelectedGpuHighPart.Value)
         : null;
