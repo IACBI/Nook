@@ -25,7 +25,7 @@ internal sealed class NativeSampleSource : ISampleSource
 
     public GpuSnapshot Sample(SampleRequest request)
     {
-        var process = request.Pid is { } pid ? MainForm.LookUpProcess(pid, request.ProcessName ?? string.Empty) : null;
+        var process = request.Pid is { } pid ? ProcessLookup.Of(MainForm.LookUpProcess(pid, request.ProcessName ?? string.Empty)) : default;
         if (_reader is null && (++_samplesWithoutReader % ReaderRetryIntervalSamples != 0 || !TryOpenReader()))
         {
             return GpuSnapshot.Unavailable(request, _readerError, null, process);
