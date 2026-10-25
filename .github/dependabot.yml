@@ -9,3 +9,8 @@ updates:
     directory: /tests/Nook.Tests
     schedule:
       interval: weekly
+
+  - package-ecosystem: dotnet-sdk
+    directory: /
+    schedule:
+      interval: weekly
