@@ -107,6 +107,10 @@ jobs:
             if ($view -notmatch 'not found') { Fail "gh release view failed: $view" }
           }
 
+          # Actions ends every pwsh step with `exit $LASTEXITCODE`. The release lookup above is
+          # expected to fail with "not found", so without this the step fails after passing.
+          exit 0
+
       - name: Restore
         shell: pwsh
         run: |
