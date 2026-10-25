@@ -17,6 +17,27 @@ public class NativeLayoutTests
     }
 
     [Fact]
+    public void NvmlPciInfo_matches_the_nvml_header_size()
+    {
+        Assert.Equal(68, GpuTelemetryEngine.NvmlPciInfoNativeSize);
+        Assert.Equal(GpuTelemetryEngine.NvmlPciInfoNativeSize, GpuTelemetryEngine.NvmlPciInfoManagedSize);
+    }
+
+    [Fact]
+    public void AdapterInfo_matches_the_windows_adl_sdk_size()
+    {
+        Assert.Equal(1572, GpuTelemetryEngine.AdapterInfoNativeSize);
+        Assert.Equal(GpuTelemetryEngine.AdapterInfoNativeSize, GpuTelemetryEngine.AdapterInfoManagedSize);
+    }
+
+    [Fact]
+    public void D3dkmtAdapterAddress_matches_the_wdk_size()
+    {
+        Assert.Equal(12, GpuAdapterCatalog.D3dkmtAdapterAddressNativeSize);
+        Assert.Equal(GpuAdapterCatalog.D3dkmtAdapterAddressNativeSize, GpuAdapterCatalog.D3dkmtAdapterAddressManagedSize);
+    }
+
+    [Fact]
     public void Dxgi_vtable_slots_match_dxgi_h()
     {
         // dxgi.h: IUnknown 0-2, IDXGIObject 3-6, IDXGIFactory 7-11, IDXGIFactory1::EnumAdapters1 12.
