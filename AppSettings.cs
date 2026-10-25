@@ -54,17 +54,31 @@ internal static class SettingsStore
     private static readonly string FilePath = Path.Combine(DirectoryPath, "settings.json");
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
 
-    public static AppSettings Load() => Load(FilePath);
+    /// <summary>
+    /// Why the last <see cref="Load()"/> fell back to defaults, or null when the profile loaded or did not
+    /// exist. The store has no logger of its own, so the caller reports it.
+    /// </summary>
+    public static string? LastLoadProblem { get; private set; }
+
+    public static AppSettings Load()
+    {
+        var settings = Load(FilePath, out var problem);
+        LastLoadProblem = problem;
+        return settings;
+    }
 
     public static bool Save(AppSettings settings) => Save(settings, FilePath);
+
+    internal static AppSettings Load(string filePath) => Load(filePath, out _);
 
     /// <summary>
     /// Reads the profile at <paramref name="filePath"/>. Each field is read on its own, so a damaged
     /// field falls back to its default without discarding the rest. A file that cannot be used at all
     /// is copied to settings.bad.json first, so the next save does not silently replace it.
     /// </summary>
-    internal static AppSettings Load(string filePath)
+    internal static AppSettings Load(string filePath, out string? problem)
     {
+        problem = null;
         try
         {
             var file = new FileInfo(filePath);
@@ -75,27 +89,28 @@ internal static class SettingsStore
 
             if (file.Length > MaxSettingsFileBytes)
             {
-                KeepUnusableCopy(filePath);
+                problem = KeepUnusableCopy(filePath, "is larger than 64 KB");
                 return new AppSettings();
             }
 
             using var document = JsonDocument.Parse(File.ReadAllText(filePath));
             if (document.RootElement.ValueKind != JsonValueKind.Object)
             {
-                KeepUnusableCopy(filePath);
+                problem = KeepUnusableCopy(filePath, "is not a JSON object");
                 return new AppSettings();
             }
 
             return ReadProfile(document.RootElement);
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
-            KeepUnusableCopy(filePath);
+            problem = KeepUnusableCopy(filePath, $"is not valid JSON ({ex.Message})");
             return new AppSettings();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
         {
             // A damaged or unreadable profile must never stop the application from starting.
+            problem = $"Settings could not be read ({ex.Message}); defaults are in use.";
             return new AppSettings();
         }
     }
@@ -216,16 +231,21 @@ internal static class SettingsStore
         return value.ValueKind == JsonValueKind.Number && value.TryGetUInt32(out var number) ? number : fallback;
     }
 
-    /// <summary>Copies an unusable profile to settings.bad.json so the next save cannot destroy it.</summary>
-    private static void KeepUnusableCopy(string filePath)
+    /// <summary>
+    /// Copies an unusable profile to settings.bad.json so the next save cannot destroy it, and
+    /// returns the message that explains what happened.
+    /// </summary>
+    private static string KeepUnusableCopy(string filePath, string reason)
     {
         try
         {
             File.Copy(filePath, Path.Combine(Path.GetDirectoryName(filePath) ?? string.Empty, "settings.bad.json"), overwrite: true);
+            return $"settings.json {reason}; it was kept as settings.bad.json and defaults are in use.";
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
             // Best effort: the defaults remain usable without the preserved copy.
+            return $"settings.json {reason} and could not be kept as settings.bad.json ({ex.Message}); defaults are in use.";
         }
     }
 
