@@ -51,7 +51,7 @@ Run the workflow manually from the Actions tab, or:
 gh workflow run release.yml
 ```
 
-A dry run builds, tests and checks the version, but creates nothing. It uploads `Nook.exe` and `notes.md` as the `Nook-release-dry-run` artifact for inspection. It also runs on pull requests that change the workflow or `docs/releases/`.
+A dry run builds, tests and checks the version, but creates nothing. Only a pushed tag publishes: a manual run started on a tag (`--ref vX.Y.Z`) is still a dry run. It uploads `Nook.exe` and `notes.md` as the `Nook-release-dry-run` artifact for inspection. It also runs on pull requests that change the workflow or `docs/releases/`.
 
 ## Verifying a download
 
