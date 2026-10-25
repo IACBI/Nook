@@ -14,6 +14,9 @@ internal sealed class MainForm : Form
     // integrated adapters report neither, so say why instead of just "Unavailable".
     private const string NoDriverSensorText = "No driver sensor";
 
+    // Marks secondary text. ApplyTheme used to detect it by its current colour, which it overwrites itself.
+    private const string MutedTag = "Muted";
+
     private const int WmHotKey = 0x0312;
     private const int HotKeyToggleOverlay = 1;
     private const int HotKeyToggleLock = 2;
@@ -49,8 +52,8 @@ internal sealed class MainForm : Form
     private readonly System.Windows.Forms.Timer _processRefreshTimer = new() { Interval = 10000 };
     // Debounced so dragging the overlay or toggling options writes the file once, not per event.
     private readonly System.Windows.Forms.Timer _saveTimer = new() { Interval = 1500 };
-    private readonly Label _hotkeyInfo = new() { AutoSize = true, ForeColor = SystemColors.GrayText, Margin = new Padding(0, 0, 0, 16) };
-    private readonly Label _shortcutHint = new() { AutoSize = true, ForeColor = SystemColors.GrayText, Margin = new Padding(8, 8, 0, 0) };
+    private readonly Label _hotkeyInfo = new() { AutoSize = true, ForeColor = SystemColors.GrayText, Tag = MutedTag, Margin = new Padding(0, 0, 0, 16) };
+    private readonly Label _shortcutHint = new() { AutoSize = true, ForeColor = SystemColors.GrayText, Tag = MutedTag, Margin = new Padding(8, 8, 0, 0) };
     private readonly AppSettings _settings = SettingsStore.Load();
     private readonly NotifyIcon _notifyIcon = new();
     private readonly ContextMenuStrip _trayMenu = new();
@@ -170,6 +173,17 @@ internal sealed class MainForm : Form
     {
         RefreshProcesses();
         RefreshGpuList(null);
+        if (SettingsStore.LastLoadProblem is { } settingsProblem)
+        {
+            Log.Warn(settingsProblem);
+        }
+
+        // A portable exe can be moved; refresh the Run entry so it does not keep starting a stale path.
+        if (_settings.StartWithWindows)
+        {
+            SetStartWithWindows(true);
+        }
+
         Log.Info(_adapterLookup.Count == 0
             ? "No display adapters enumerated yet."
             : $"Adapters: {string.Join("; ", _adapterLookup.Values.Select(adapter => $"{adapter.Name} ({adapter.Luid})"))}");
@@ -269,7 +283,7 @@ internal sealed class MainForm : Form
         header.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
         var title = new Label { Text = "Nook", Dock = DockStyle.Fill, Font = new Font("Segoe UI Semibold", 15.5f), TextAlign = ContentAlignment.BottomLeft, AccessibleName = "Application title" };
-        var subtitle = new Label { Text = "Per-process GPU memory, load, temperature and clock", Dock = DockStyle.Fill, ForeColor = SystemColors.GrayText, TextAlign = ContentAlignment.TopLeft };
+        var subtitle = new Label { Text = "Per-process GPU memory, load, temperature and clock", Dock = DockStyle.Fill, ForeColor = SystemColors.GrayText, Tag = MutedTag, TextAlign = ContentAlignment.TopLeft };
         var cadence = new Label { Text = "WINDOWS-NATIVE  •  1 SECOND", AutoSize = true, Anchor = AnchorStyles.Right | AnchorStyles.Bottom, Font = new Font("Segoe UI Semibold", 8f), Padding = new Padding(10, 5, 10, 5), Tag = "AccentBadge" };
         header.Controls.Add(title, 0, 0);
         header.Controls.Add(subtitle, 0, 1);
@@ -304,6 +318,7 @@ internal sealed class MainForm : Form
         _statusLabel.Dock = DockStyle.Fill;
         _statusLabel.TextAlign = ContentAlignment.MiddleLeft;
         _statusLabel.ForeColor = SystemColors.GrayText;
+        _statusLabel.Tag = MutedTag;
         _statusLabel.AutoEllipsis = true;
         _statusLabel.AccessibleName = "Monitoring status";
 
@@ -1097,6 +1112,12 @@ internal sealed class MainForm : Form
     private void ClearProcessSelection()
     {
         _processTracker.Detach(forget: true);
+        if (_settings.SelectedProcessName is not null)
+        {
+            _settings.SelectedProcessName = null;
+            RequestSave();
+        }
+
         ResetStatistics();
     }
 
@@ -1311,7 +1332,7 @@ internal sealed class MainForm : Form
             }
             else if (child is Label or CheckBox)
             {
-                child.ForeColor = child.ForeColor == SystemColors.GrayText ? colors.Muted : colors.Foreground;
+                child.ForeColor = child.Tag as string == MutedTag ? colors.Muted : colors.Foreground;
                 child.BackColor = child.Parent?.Tag as string == "MetricCard" ? colors.Surface : colors.Background;
             }
 
