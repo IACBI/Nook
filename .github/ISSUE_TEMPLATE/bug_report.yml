@@ -11,6 +11,15 @@ body:
       required: true
 
   - type: input
+    id: version
+    attributes:
+      label: Nook version
+      description: The first line of %LocalAppData%\Nook\nook.log, or Nook.exe → Properties → Details → Product version.
+      placeholder: 1.0.3
+    validations:
+      required: true
+
+  - type: input
     id: gpu
     attributes:
       label: GPU and driver version
@@ -43,3 +52,10 @@ body:
     attributes:
       label: Anything else
       description: Screenshot of the window or overlay, the status line at the bottom, other GPU tools running at the same time.
+
+  - type: textarea
+    id: log
+    attributes:
+      label: nook.log
+      description: Paste the last lines of %LocalAppData%\Nook\nook.log, or drag the file in.
+      render: text
