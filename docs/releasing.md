@@ -15,7 +15,7 @@ How to cut a Nook release. The workflow is `.github/workflows/release.yml`.
 
 4. The tag push starts the `release` workflow. It creates a draft, checks it, and publishes it as the latest release.
 
-The release body file must not contain the SHA-256 line. The workflow appends `SHA-256 \`<hash>\`` itself.
+The release body file must not contain the SHA-256 line; the workflow appends it itself.
 
 ## What the workflow checks
 
