@@ -47,6 +47,10 @@ internal sealed class MainForm : Form
     private readonly ToolTip _toolTip = new() { AutomaticDelay = 250, AutoPopDelay = 5000, InitialDelay = 250, ReshowDelay = 100, ShowAlways = true };
     private readonly System.Windows.Forms.Timer _sampleTimer = new() { Interval = 1000 };
     private readonly System.Windows.Forms.Timer _processRefreshTimer = new() { Interval = 10000 };
+    // Debounced so dragging the overlay or toggling options writes the file once, not per event.
+    private readonly System.Windows.Forms.Timer _saveTimer = new() { Interval = 1500 };
+    private readonly Label _hotkeyInfo = new() { AutoSize = true, ForeColor = SystemColors.GrayText, Margin = new Padding(0, 0, 0, 16) };
+    private readonly Label _shortcutHint = new() { AutoSize = true, ForeColor = SystemColors.GrayText, Margin = new Padding(8, 8, 0, 0) };
     private readonly AppSettings _settings = SettingsStore.Load();
     private readonly NotifyIcon _notifyIcon = new();
     private readonly ContextMenuStrip _trayMenu = new();
@@ -81,6 +85,11 @@ internal sealed class MainForm : Form
     private long _lastGpuDedicatedBytes;
     private string? _lastProcessMemory;
     private string? _lastProcessShared;
+    private bool _exitRequested;
+    private string? _hotkeyWarning;
+    private string? _lastLoggedReadError;
+    private int _readerRetryTicks;
+    private const int ReaderRetryIntervalTicks = 10;
 
     public MainForm()
     {
@@ -102,6 +111,7 @@ internal sealed class MainForm : Form
         SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
         _sampleTimer.Tick += (_, _) => SampleCounters();
         _processRefreshTimer.Tick += (_, _) => RefreshProcesses();
+        _saveTimer.Tick += (_, _) => SaveSettings();
         Shown += OnShown;
         FormClosing += OnFormClosing;
         Resize += OnResize;
@@ -119,13 +129,36 @@ internal sealed class MainForm : Form
         UnregisterHotKey(Handle, HotKeyToggleOverlay);
         UnregisterHotKey(Handle, HotKeyToggleLock);
 
+        var overlayKeys = FormatHotkey(_settings.HotkeyToggleOverlayModifiers, _settings.HotkeyToggleOverlayKey);
+        var lockKeys = FormatHotkey(_settings.HotkeyToggleLockModifiers, _settings.HotkeyToggleLockKey);
         var overlayOk = RegisterHotKey(Handle, HotKeyToggleOverlay, _settings.HotkeyToggleOverlayModifiers, _settings.HotkeyToggleOverlayKey);
         var lockOk = RegisterHotKey(Handle, HotKeyToggleLock, _settings.HotkeyToggleLockModifiers, _settings.HotkeyToggleLockKey);
 
-        if (!overlayOk || !lockOk)
+        // The handle is recreated whenever ShowInTaskbar changes, so only a change in the outcome is news.
+        var warning = overlayOk && lockOk
+            ? null
+            : $"Shortcut unavailable, another application already uses it: {string.Join(", ", new[] { overlayOk ? null : overlayKeys, lockOk ? null : lockKeys }.OfType<string>())}.";
+        if (warning is not null && warning != _hotkeyWarning)
         {
-            SetStatus("One or more global overlay shortcuts are unavailable on this system.");
+            Log.Warn(warning);
         }
+
+        _hotkeyWarning = warning;
+        _hotkeyInfo.Text = $"Toggle Overlay: {overlayKeys}{(overlayOk ? "" : "  (unavailable)")}\nToggle Lock: {lockKeys}{(lockOk ? "" : "  (unavailable)")}";
+        _shortcutHint.Text = $"{overlayKeys} / {lockKeys}";
+    }
+
+    /// <summary>Formats a RegisterHotKey modifier mask and virtual key the way Windows menus show them.</summary>
+    internal static string FormatHotkey(uint modifiers, uint virtualKey)
+    {
+        var parts = new List<string>(5);
+        if ((modifiers & 0x2) != 0) parts.Add("Ctrl");
+        if ((modifiers & 0x1) != 0) parts.Add("Alt");
+        if ((modifiers & 0x4) != 0) parts.Add("Shift");
+        if ((modifiers & 0x8) != 0) parts.Add("Win");
+        var key = (Keys)virtualKey;
+        parts.Add(key is >= Keys.D0 and <= Keys.D9 ? ((char)virtualKey).ToString() : key.ToString());
+        return string.Join("+", parts);
     }
 
     private void OnShown(object? sender, EventArgs e)
@@ -138,18 +171,34 @@ internal sealed class MainForm : Form
     {
         RefreshProcesses();
         RefreshGpuList(null);
+        Log.Info(_adapterLookup.Count == 0
+            ? "No display adapters enumerated yet."
+            : $"Adapters: {string.Join("; ", _adapterLookup.Values.Select(adapter => $"{adapter.Name} ({adapter.Luid})"))}");
+        TryCreateReader();
+        _sampleTimer.Start();
+        _processRefreshTimer.Start();
+    }
+
+    private void TryCreateReader()
+    {
         try
         {
             _reader = new PdhGpuMemoryReader();
-            SetStatus("Ready. Values update once per second.");
+            SetStatus(_hotkeyWarning ?? "Ready. Values update once per second.");
+            if (_readerRetryTicks > 0)
+            {
+                Log.Info("Windows GPU counters became available.");
+            }
         }
         catch (Exception ex)
         {
+            if (_readerRetryTicks == 0)
+            {
+                Log.Error("Windows GPU counters could not be opened; retrying every 10 seconds.", ex);
+            }
+
             SetStatus($"Windows GPU counters unavailable: {ex.Message}");
         }
-
-        _sampleTimer.Start();
-        _processRefreshTimer.Start();
     }
 
     protected override void Dispose(bool disposing)
@@ -165,6 +214,7 @@ internal sealed class MainForm : Form
             SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
             _sampleTimer.Dispose();
             _processRefreshTimer.Dispose();
+            _saveTimer.Dispose();
             _notifyIcon.Dispose();
             _trayMenu.Dispose();
             _overlay?.Dispose();
@@ -277,8 +327,7 @@ internal sealed class MainForm : Form
         AddCornerMenuItem("Bottom left", OverlayCorner.BottomLeft);
         AddCornerMenuItem("Bottom right", OverlayCorner.BottomRight);
 
-        var shortcuts = new Label { Text = "Ctrl+Shift+V / L", AutoSize = true, ForeColor = SystemColors.GrayText, Margin = new Padding(8, 8, 0, 0) };
-        commands.Controls.AddRange([_overlayVisible, _overlayLocked, corners, shortcuts]);
+        commands.Controls.AddRange([_overlayVisible, _overlayLocked, corners, _shortcutHint]);
 
         root.Controls.Add(header, 0, 0);
         root.Controls.Add(navBar, 0, 1);
@@ -351,6 +400,7 @@ internal sealed class MainForm : Form
         _vramFilterCheck.CheckedChanged += (_, _) =>
         {
             _settings.OnlyShowVramProcesses = _vramFilterCheck.Checked;
+            RequestSave();
             ApplyProcessFilters();
         };
 
@@ -424,22 +474,30 @@ internal sealed class MainForm : Form
 
         var trayHeader = new Label { Text = "System Tray and Startup", Font = new Font("Segoe UI Semibold", 10f), AutoSize = true, Margin = new Padding(0, 0, 0, 8) };
         var minimizeCheck = new CheckBox { Text = "Minimize window to system tray", AutoSize = true, Checked = _settings.MinimizeToTray, Margin = new Padding(0, 0, 0, 6) };
-        minimizeCheck.CheckedChanged += (_, _) => _settings.MinimizeToTray = minimizeCheck.Checked;
+        minimizeCheck.CheckedChanged += (_, _) =>
+        {
+            _settings.MinimizeToTray = minimizeCheck.Checked;
+            RequestSave();
+        };
 
         var closeCheck = new CheckBox { Text = "Close button minimizes to system tray", AutoSize = true, Checked = _settings.CloseToTray, Margin = new Padding(0, 0, 0, 6) };
-        closeCheck.CheckedChanged += (_, _) => _settings.CloseToTray = closeCheck.Checked;
+        closeCheck.CheckedChanged += (_, _) =>
+        {
+            _settings.CloseToTray = closeCheck.Checked;
+            RequestSave();
+        };
 
         var startupCheck = new CheckBox { Text = "Start automatically with Windows", AutoSize = true, Checked = _settings.StartWithWindows, Margin = new Padding(0, 0, 0, 16) };
         startupCheck.CheckedChanged += (_, _) =>
         {
             _settings.StartWithWindows = startupCheck.Checked;
             SetStartWithWindows(startupCheck.Checked);
+            RequestSave();
         };
 
         var hotkeyHeader = new Label { Text = "Global Hotkeys", Font = new Font("Segoe UI Semibold", 10f), AutoSize = true, Margin = new Padding(0, 0, 0, 8) };
-        var hotkeyInfo = new Label { Text = "Toggle Overlay: Ctrl + Shift + V\nToggle Lock: Ctrl + Shift + L", AutoSize = true, ForeColor = SystemColors.GrayText, Margin = new Padding(0, 0, 0, 16) };
 
-        panel.Controls.AddRange([trayHeader, minimizeCheck, closeCheck, startupCheck, hotkeyHeader, hotkeyInfo]);
+        panel.Controls.AddRange([trayHeader, minimizeCheck, closeCheck, startupCheck, hotkeyHeader, _hotkeyInfo]);
         container.Controls.Add(panel);
     }
 
@@ -463,7 +521,7 @@ internal sealed class MainForm : Form
         _trayMenu.Items.Add("-");
         _trayMenu.Items.Add("Exit", null, (_, _) =>
         {
-            _settings.CloseToTray = false;
+            _exitRequested = true;
             Close();
         });
 
@@ -502,7 +560,7 @@ internal sealed class MainForm : Form
 
     private void OnFormClosing(object? sender, FormClosingEventArgs e)
     {
-        if (_settings.CloseToTray && e.CloseReason == CloseReason.UserClosing)
+        if (_settings.CloseToTray && !_exitRequested && e.CloseReason == CloseReason.UserClosing)
         {
             e.Cancel = true;
             ShowInTaskbar = false;
@@ -516,6 +574,7 @@ internal sealed class MainForm : Form
         }
         else
         {
+            _saveTimer.Stop();
             SaveSettings();
         }
     }
@@ -613,6 +672,12 @@ internal sealed class MainForm : Form
     {
         if (_reader is null)
         {
+            // Counters can be missing early in a logon started by the Run key, so keep trying.
+            if (++_readerRetryTicks % ReaderRetryIntervalTicks == 0)
+            {
+                TryCreateReader();
+            }
+
             return;
         }
 
@@ -626,10 +691,18 @@ internal sealed class MainForm : Form
             var result = _reader.Read();
             if (!result.IsAvailable)
             {
-                SetStatus(result.Error ?? "Windows GPU counters are unavailable.");
+                var error = result.Error ?? "Windows GPU counters are unavailable.";
+                LogReadError(error, null);
+                SetStatus(error);
                 ClearCurrentValues();
                 UpdateOverlay();
                 return;
+            }
+
+            if (_lastLoggedReadError is not null)
+            {
+                Log.Info("Windows GPU counters recovered.");
+                _lastLoggedReadError = null;
             }
 
             var processSamples = result.ProcessDedicatedBytes!;
@@ -648,9 +721,29 @@ internal sealed class MainForm : Form
         }
         catch (Exception ex)
         {
+            LogReadError($"Windows GPU counter could not be read: {ex.Message}", ex);
             ClearCurrentValues();
             SetStatus($"Windows GPU counter could not be read: {ex.Message}");
             UpdateOverlay();
+        }
+    }
+
+    /// <summary>Logs a sampling failure once per distinct message; the sampler would otherwise repeat it every second.</summary>
+    private void LogReadError(string error, Exception? exception)
+    {
+        if (error == _lastLoggedReadError)
+        {
+            return;
+        }
+
+        _lastLoggedReadError = error;
+        if (exception is null)
+        {
+            Log.Warn(error);
+        }
+        else
+        {
+            Log.Error(error, exception);
         }
     }
 
@@ -843,15 +936,43 @@ internal sealed class MainForm : Form
         {
             _gpuSelector.Items.Clear();
             _gpuSelector.Items.AddRange(adapters.Cast<object>().ToArray());
-            _gpuSelector.SelectedItem = selected.HasValue
-                ? adapters.FirstOrDefault(adapter => adapter.Luid == selected.Value)
-                : adapters.FirstOrDefault();
+            var match = FindAdapter(adapters, selected, _settings.SelectedGpuName);
+            _gpuSelector.SelectedItem = match;
+            if (match is not null && (match.Luid != _settings.SelectedGpu || match.Name != _settings.SelectedGpuName))
+            {
+                _settings.SetSelectedGpu(match.Luid, match.Name);
+                RequestSave();
+            }
         }
         finally
         {
             _gpuSelector.EndUpdate();
             _isRefreshingGpus = false;
         }
+    }
+
+    /// <summary>
+    /// Resolves the saved GPU. A LUID is only unique until the next restart, so after a reboot
+    /// the name decides, and only when exactly one adapter carries it; otherwise the first adapter.
+    /// </summary>
+    internal static GpuAdapterItem? FindAdapter(IReadOnlyList<GpuAdapterItem> adapters, GpuLuid? luid, string? name)
+    {
+        var byLuid = luid.HasValue ? adapters.FirstOrDefault(adapter => adapter.Luid == luid.Value) : null;
+        if (byLuid is not null)
+        {
+            return byLuid;
+        }
+
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            var byName = adapters.Where(adapter => string.Equals(adapter.Name, name, StringComparison.OrdinalIgnoreCase)).Take(2).ToList();
+            if (byName.Count == 1)
+            {
+                return byName[0];
+            }
+        }
+
+        return adapters.Count > 0 ? adapters[0] : null;
     }
 
     private void SelectGpu()
@@ -861,7 +982,9 @@ internal sealed class MainForm : Form
             return;
         }
 
-        _settings.SetSelectedGpu((_gpuSelector.SelectedItem as GpuAdapterItem)?.Luid);
+        var gpu = _gpuSelector.SelectedItem as GpuAdapterItem;
+        _settings.SetSelectedGpu(gpu?.Luid, gpu?.Name);
+        RequestSave();
         _gpuUsageValue.Text = "—";
         _gpuMemoryValue.Text = "—";
     }
@@ -891,6 +1014,7 @@ internal sealed class MainForm : Form
         }
         catch (Exception ex)
         {
+            Log.Error("The running process list could not be read.", ex);
             SetStatus($"The running process list could not be read: {ex.Message}");
         }
         finally
@@ -987,7 +1111,11 @@ internal sealed class MainForm : Form
         _selectedPid = process.Pid;
         _selectedProcessName = process.Name;
         _selectedStartTime = TryGetStartTime(process.Pid);
-        _settings.SelectedProcessName = process.Name;
+        if (_settings.SelectedProcessName != process.Name)
+        {
+            _settings.SelectedProcessName = process.Name;
+            RequestSave();
+        }
         if (resetStatistics)
         {
             ResetStatistics();
@@ -1047,6 +1175,7 @@ internal sealed class MainForm : Form
             _overlay.MoveToCorner(OverlayCorner.TopRight);
         }
 
+        _overlay.LocationChanged += (_, _) => RequestSave();
         _overlayVisible.Checked = _settings.OverlayVisible;
         _overlayLocked.Checked = _settings.OverlayLocked;
         UpdateOverlay();
@@ -1081,7 +1210,12 @@ internal sealed class MainForm : Form
 
     private void SetOverlayVisibility(bool visible)
     {
-        _settings.OverlayVisible = visible;
+        if (_settings.OverlayVisible != visible)
+        {
+            _settings.OverlayVisible = visible;
+            RequestSave();
+        }
+
         if (_overlayVisible.Checked != visible)
         {
             _overlayVisible.Checked = visible;
@@ -1101,7 +1235,12 @@ internal sealed class MainForm : Form
 
     private void SetOverlayLock(bool locked)
     {
-        _settings.OverlayLocked = locked;
+        if (_settings.OverlayLocked != locked)
+        {
+            _settings.OverlayLocked = locked;
+            RequestSave();
+        }
+
         if (_overlayLocked.Checked != locked)
         {
             _overlayLocked.Checked = locked;
@@ -1128,15 +1267,25 @@ internal sealed class MainForm : Form
     private void AddCornerMenuItem(string text, OverlayCorner corner) =>
         _cornerMenu.Items.Add(text, null, (_, _) => _overlay?.MoveToCorner(corner));
 
+    private void RequestSave()
+    {
+        _saveTimer.Stop();
+        _saveTimer.Start();
+    }
+
     private void SaveSettings()
     {
+        _saveTimer.Stop();
         if (_overlay is not null)
         {
             _settings.OverlayX = _overlay.Left;
             _settings.OverlayY = _overlay.Top;
         }
 
-        SettingsStore.Save(_settings);
+        if (!SettingsStore.Save(_settings))
+        {
+            Log.Warn("Settings could not be written; changes will be retried on the next save.");
+        }
     }
 
     private void ApplyTheme()
@@ -1242,6 +1391,7 @@ internal sealed class MainForm : Form
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException)
         {
+            Log.Warn($"The Windows startup entry could not be updated: {ex.Message}");
             SetStatus($"The Windows startup entry could not be updated: {ex.Message}");
         }
     }
