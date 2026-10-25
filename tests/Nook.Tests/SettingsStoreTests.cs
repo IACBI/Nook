@@ -76,6 +76,28 @@ public class SettingsStoreTests : IDisposable
     }
 
     [Fact]
+    public void An_unusable_file_reports_why_defaults_are_in_use()
+    {
+        WriteFile("{ \"OverlayX\": 120,");
+
+        SettingsStore.Load(SettingsPath, out var problem);
+
+        Assert.NotNull(problem);
+        Assert.Contains("settings.bad.json", problem);
+    }
+
+    [Fact]
+    public void A_readable_or_missing_file_reports_no_problem()
+    {
+        SettingsStore.Load(SettingsPath, out var missing);
+        WriteFile("{ \"OverlayX\": 120 }");
+        SettingsStore.Load(SettingsPath, out var readable);
+
+        Assert.Null(missing);
+        Assert.Null(readable);
+    }
+
+    [Fact]
     public void A_wrong_typed_field_and_an_invalid_hotkey_default_while_the_rest_loads()
     {
         WriteFile("""
