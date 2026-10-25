@@ -1,0 +1,236 @@
+name: release
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/release.yml', 'docs/releases/**']
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    concurrency:
+      group: release-${{ github.ref }}
+      cancel-in-progress: false
+
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Resolve mode
+        shell: pwsh
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:REF_TYPE -eq 'tag') {
+            $isRelease = 'true'
+            $tag = $env:REF_NAME
+            $version = $tag.Substring(1)
+          } else {
+            $isRelease = 'false'
+          }
+          $projectVersion = dotnet msbuild Nook.csproj -nologo -getProperty:Version
+          if ($LASTEXITCODE -ne 0) { throw "dotnet msbuild failed with exit code $LASTEXITCODE" }
+          $projectVersion = "$projectVersion".Trim()
+          if (-not $projectVersion) { throw 'Could not read <Version> from Nook.csproj' }
+          if ($isRelease -ne 'true') {
+            $version = $projectVersion
+            $tag = "v$version"
+          }
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value @(
+            "IS_RELEASE=$isRelease",
+            "TAG=$tag",
+            "VERSION=$version",
+            "PROJECT_VERSION=$projectVersion"
+          )
+
+      # Nothing is built or created until every check here has passed. Releases and
+      # tags are immutable and the v* tags cannot be moved, so a failure after
+      # `gh release create` cannot be undone; it can only be fixed by a new version.
+      - name: Validate
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Fail([string]$message) {
+            Write-Output "::error::$message"
+            exit 1
+          }
+
+          if ($env:PROJECT_VERSION -ne $env:VERSION) {
+            Fail "Nook.csproj has Version $($env:PROJECT_VERSION) but the tag is $($env:TAG). Set <Version> to $($env:VERSION) in the same commit."
+          }
+
+          if ($env:IS_RELEASE -eq 'true') {
+            $commit = git rev-parse "$env:TAG^{commit}"
+            if ($LASTEXITCODE -ne 0) { Fail "$($env:TAG) does not resolve to a commit" }
+            git merge-base --is-ancestor $commit origin/main
+            if ($LASTEXITCODE -eq 1) { Fail "$($env:TAG) is not reachable from main. Releases are cut only from main." }
+            if ($LASTEXITCODE -ne 0) { Fail "git merge-base failed with exit code $LASTEXITCODE" }
+          }
+
+          $notesPath = "docs/releases/$($env:TAG).md"
+          $hasNotes = (Test-Path -LiteralPath $notesPath -PathType Leaf) -and (-not [string]::IsNullOrWhiteSpace((Get-Content -Raw -LiteralPath $notesPath)))
+          if (-not $hasNotes) {
+            if ($env:IS_RELEASE -eq 'true') { Fail "$notesPath is missing or empty" }
+            Write-Output "::warning::$notesPath is missing or empty; the dry run will use a placeholder body"
+          }
+
+          if ($env:IS_RELEASE -eq 'true') {
+            $view = gh release view $env:TAG --repo $env:REPO 2>&1 | Out-String
+            if ($LASTEXITCODE -eq 0) { Fail "A release for $($env:TAG) already exists. Releases are immutable; publish a new version instead." }
+            if ($view -notmatch 'not found') { Fail "gh release view failed: $view" }
+          }
+
+      - name: Restore
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet restore tests/Nook.Tests --locked-mode
+          if ($LASTEXITCODE -ne 0) { throw "dotnet restore failed with exit code $LASTEXITCODE" }
+
+      - name: Build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet build Nook.csproj -c Release "-p:TreatWarningsAsErrors=true" --no-restore
+          if ($LASTEXITCODE -ne 0) { throw "dotnet build failed with exit code $LASTEXITCODE" }
+
+      - name: Test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet test tests/Nook.Tests -c Release --no-restore
+          if ($LASTEXITCODE -ne 0) { throw "dotnet test failed with exit code $LASTEXITCODE" }
+
+      - name: Publish
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet publish Nook.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o release
+          if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed with exit code $LASTEXITCODE" }
+          if (-not (Test-Path -LiteralPath release/Nook.exe -PathType Leaf)) { throw 'release/Nook.exe was not produced' }
+
+      - name: Check file version
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $fileVersion = (Get-Item -LiteralPath release/Nook.exe).VersionInfo.FileVersion
+          if ($fileVersion -ne $env:VERSION -and -not $fileVersion.StartsWith("$($env:VERSION).")) {
+            throw "release/Nook.exe FileVersion '$fileVersion' does not match $($env:VERSION)"
+          }
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        if: env.IS_RELEASE == 'true'
+        with:
+          subject-path: release/Nook.exe
+
+      - name: Compose notes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath release/Nook.exe).Hash.ToUpperInvariant()
+          $notesPath = "docs/releases/$($env:TAG).md"
+          if (Test-Path -LiteralPath $notesPath -PathType Leaf) {
+            $body = (Get-Content -Raw -LiteralPath $notesPath).TrimEnd()
+          } else {
+            $body = "Nook $($env:VERSION). Dry run: $notesPath does not exist yet."
+          }
+          $tick = [char]96
+          $text = "$body`n`nSHA-256 $tick$hash$tick`n"
+          [System.IO.File]::WriteAllText((Join-Path (Get-Location) 'release/notes.md'), $text, [System.Text.UTF8Encoding]::new($false))
+          if ($env:IS_RELEASE -ne 'true') {
+            Write-Output '--- release/notes.md ---'
+            Write-Output $text
+          }
+
+      - name: Create draft release
+        if: env.IS_RELEASE == 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          gh release create $env:TAG release/Nook.exe --draft --verify-tag --title "Nook $($env:VERSION)" --notes-file release/notes.md --repo $env:REPO
+          if ($LASTEXITCODE -ne 0) { throw "gh release create failed with exit code $LASTEXITCODE" }
+
+      # Stops before publishing. A mismatched draft stays unpublished so a maintainer
+      # can inspect it; deleting it is their call.
+      - name: Check draft asset digest
+        if: env.IS_RELEASE == 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expected = 'sha256:' + (Get-FileHash -Algorithm SHA256 -LiteralPath release/Nook.exe).Hash.ToLowerInvariant()
+          $digest = gh release view $env:TAG --repo $env:REPO --json assets --jq '.assets[0] | select(.name == "Nook.exe") | .digest'
+          if ($LASTEXITCODE -ne 0) { throw "gh release view failed with exit code $LASTEXITCODE" }
+          if ($digest -cne $expected) {
+            throw "Draft asset digest '$digest' does not match '$expected'. The draft is left unpublished."
+          }
+
+      - name: Publish release
+        if: env.IS_RELEASE == 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          gh release edit $env:TAG --repo $env:REPO --draft=false --latest
+          if ($LASTEXITCODE -ne 0) { throw "gh release edit failed with exit code $LASTEXITCODE" }
+
+      # The release is public once the previous step has run, so this cannot prevent a
+      # bad release. It proves the published bytes are the attested build.
+      - name: Verify published download
+        if: env.IS_RELEASE == 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = Join-Path $env:RUNNER_TEMP ('nook-verify-' + [guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $dir | Out-Null
+          gh release download $env:TAG --repo $env:REPO --pattern Nook.exe --dir $dir
+          if ($LASTEXITCODE -ne 0) { throw "gh release download failed with exit code $LASTEXITCODE" }
+          $downloaded = Join-Path $dir 'Nook.exe'
+          $downloadedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $downloaded).Hash
+          $builtHash = (Get-FileHash -Algorithm SHA256 -LiteralPath release/Nook.exe).Hash
+          if ($downloadedHash -ne $builtHash) { throw "Published Nook.exe SHA-256 $downloadedHash does not match the built file $builtHash" }
+          gh attestation verify $downloaded -R $env:REPO
+          if ($LASTEXITCODE -ne 0) { throw "gh attestation verify failed with exit code $LASTEXITCODE" }
+
+      - name: Upload dry-run files
+        if: env.IS_RELEASE != 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Nook-release-dry-run
+          path: |
+            release/Nook.exe
+            release/notes.md
