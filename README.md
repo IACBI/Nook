@@ -68,9 +68,11 @@ While the overlay is draggable it shows a `MOVE` badge and a dashed border; drag
 
 ### Configuration
 
-Settings live in `%LocalAppData%\Nook\settings.json` and are written when the application exits. The file holds the selected GPU and process, the overlay position and lock state, the tray preferences, and the two hotkeys as Windows virtual-key and modifier values.
+Settings live in `%LocalAppData%\Nook\settings.json` and are saved a moment after each change. The file holds the selected GPU and process, the overlay position and lock state, the tray preferences, and the two hotkeys as Windows virtual-key and modifier values.
 
-Deleting the file restores every default.
+Deleting the file restores every default. A file that cannot be read is kept as `settings.bad.json` instead of being overwritten, and a value that is out of range falls back to its default on its own.
+
+When something goes wrong, `%LocalAppData%\Nook\nook.log` records it; attach that file to a bug report.
 
 ### Contributing
 
@@ -139,9 +141,11 @@ Sürüklenebilir haldeyken overlay `MOVE` rozeti ve kesik çizgili bir çerçeve
 
 ### Yapılandırma
 
-Ayarlar `%LocalAppData%\Nook\settings.json` dosyasında tutulur ve uygulama kapanırken yazılır. Dosyada seçili GPU ve süreç, overlay'in konumu ve kilit durumu, tepsi tercihleri ve iki kısayol Windows sanal tuş ve değiştirici değerleri olarak bulunur.
+Ayarlar `%LocalAppData%\Nook\settings.json` dosyasında tutulur ve her değişiklikten kısa bir süre sonra kaydedilir. Dosyada seçili GPU ve süreç, overlay'in konumu ve kilit durumu, tepsi tercihleri ve iki kısayol Windows sanal tuş ve değiştirici değerleri olarak bulunur.
 
-Dosyayı silmek tüm varsayılanları geri getirir.
+Dosyayı silmek tüm varsayılanları geri getirir. Okunamayan bir dosyanın üzerine yazılmaz, `settings.bad.json` olarak saklanır; aralık dışındaki tek bir değer ise yalnızca kendisi varsayılana döner.
+
+Bir şey ters giderse `%LocalAppData%\Nook\nook.log` dosyasına yazılır; hata bildirirken bu dosyayı ekleyin.
 
 ### Katkı
 
@@ -210,9 +214,11 @@ dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=
 
 ### 配置
 
-设置保存在 `%LocalAppData%\Nook\settings.json`，在程序退出时写入。文件中包含所选显卡与进程、浮层位置与锁定状态、托盘偏好，以及以 Windows 虚拟键和修饰键数值表示的两个快捷键。
+设置保存在 `%LocalAppData%\Nook\settings.json`，每次更改后稍等片刻即会保存。文件中包含所选显卡与进程、浮层位置与锁定状态、托盘偏好，以及以 Windows 虚拟键和修饰键数值表示的两个快捷键。
 
-删除该文件即可恢复全部默认值。
+删除该文件即可恢复全部默认值。无法读取的文件不会被覆盖，而是另存为 `settings.bad.json`；超出范围的单个值只会让该项恢复默认。
+
+出现问题时会记录到 `%LocalAppData%\Nook\nook.log`，提交错误报告时请附上此文件。
 
 ### 参与贡献
 
@@ -281,9 +287,11 @@ dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=
 
 ### कॉन्फ़िगरेशन
 
-सेटिंग्स `%LocalAppData%\Nook\settings.json` में रहती हैं और ऐप्लिकेशन बंद होते समय लिखी जाती हैं। फ़ाइल में चुना हुआ GPU और प्रोसेस, ओवरले की जगह और लॉक की स्थिति, ट्रे से जुड़ी पसंद, और दोनों हॉटकी Windows वर्चुअल-की तथा मॉडिफ़ायर मानों के रूप में रहती हैं।
+सेटिंग्स `%LocalAppData%\Nook\settings.json` में रहती हैं और हर बदलाव के थोड़ी देर बाद सहेज ली जाती हैं। फ़ाइल में चुना हुआ GPU और प्रोसेस, ओवरले की जगह और लॉक की स्थिति, ट्रे से जुड़ी पसंद, और दोनों हॉटकी Windows वर्चुअल-की तथा मॉडिफ़ायर मानों के रूप में रहती हैं।
 
-फ़ाइल हटा देने पर सभी डिफ़ॉल्ट लौट आते हैं।
+फ़ाइल हटा देने पर सभी डिफ़ॉल्ट लौट आते हैं। जो फ़ाइल पढ़ी न जा सके, उसे मिटाया नहीं जाता बल्कि `settings.bad.json` के रूप में रख लिया जाता है; सीमा से बाहर का कोई एक मान सिर्फ़ अपना डिफ़ॉल्ट ले लेता है।
+
+कुछ गड़बड़ होने पर वह `%LocalAppData%\Nook\nook.log` में दर्ज होती है; बग रिपोर्ट के साथ यह फ़ाइल जोड़ें।
 
 ### योगदान
 
@@ -352,9 +360,11 @@ Mientras es arrastrable, la superposición muestra la etiqueta `MOVE` y un borde
 
 ### Configuración
 
-Los ajustes se guardan en `%LocalAppData%\Nook\settings.json` y se escriben al cerrar la aplicación. El archivo contiene la GPU y el proceso seleccionados, la posición y el estado de bloqueo de la superposición, las preferencias de la bandeja y los dos atajos como valores de tecla virtual y modificador de Windows.
+Los ajustes se guardan en `%LocalAppData%\Nook\settings.json` y se guardan poco después de cada cambio. El archivo contiene la GPU y el proceso seleccionados, la posición y el estado de bloqueo de la superposición, las preferencias de la bandeja y los dos atajos como valores de tecla virtual y modificador de Windows.
 
-Al borrar el archivo se restauran todos los valores predeterminados.
+Al borrar el archivo se restauran todos los valores predeterminados. Un archivo que no se puede leer no se sobrescribe: se conserva como `settings.bad.json`, y un valor fuera de rango vuelve solo él a su valor predeterminado.
+
+Cuando algo falla, queda registrado en `%LocalAppData%\Nook\nook.log`; adjunta ese archivo al informar de un error.
 
 ### Contribuir
 
@@ -429,9 +439,11 @@ dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=
 
 ### الإعدادات
 
-تُحفظ الإعدادات في `%LocalAppData%\Nook\settings.json` وتُكتب عند إغلاق البرنامج. يحتوي الملف على كرت الشاشة والعملية المحدَّدين، وموضع الطبقة الشفافة وحالة قفلها، وتفضيلات شريط النظام، والاختصارين بصيغة رموز المفاتيح الافتراضية ومفاتيح التعديل في Windows.
+تُحفظ الإعدادات في `%LocalAppData%\Nook\settings.json` وتُحفظ بعد كل تغيير بلحظات. يحتوي الملف على كرت الشاشة والعملية المحدَّدين، وموضع الطبقة الشفافة وحالة قفلها، وتفضيلات شريط النظام، والاختصارين بصيغة رموز المفاتيح الافتراضية ومفاتيح التعديل في Windows.
 
-وحذف الملف يعيد كل القيم الافتراضية.
+وحذف الملف يعيد كل القيم الافتراضية. أما الملف الذي تتعذر قراءته فلا يُكتب فوقه، بل يُحتفظ به باسم `settings.bad.json`، والقيمة الخارجة عن النطاق تعود وحدها إلى قيمتها الافتراضية.
+
+وعند حدوث خلل يُسجَّل في `%LocalAppData%\Nook\nook.log`؛ أرفق هذا الملف عند الإبلاغ عن مشكلة.
 
 ### المساهمة
 
@@ -502,9 +514,11 @@ Enquanto está arrastável, a sobreposição exibe o selo `MOVE` e uma borda tra
 
 ### Configuração
 
-As configurações ficam em `%LocalAppData%\Nook\settings.json` e são gravadas ao encerrar o aplicativo. O arquivo guarda a GPU e o processo selecionados, a posição e o estado de trava da sobreposição, as preferências da bandeja e os dois atalhos como valores de tecla virtual e modificador do Windows.
+As configurações ficam em `%LocalAppData%\Nook\settings.json` e são gravadas logo após cada alteração. O arquivo guarda a GPU e o processo selecionados, a posição e o estado de trava da sobreposição, as preferências da bandeja e os dois atalhos como valores de tecla virtual e modificador do Windows.
 
-Apagar o arquivo restaura todos os padrões.
+Apagar o arquivo restaura todos os padrões. Um arquivo que não pode ser lido não é sobrescrito: fica guardado como `settings.bad.json`, e um valor fora do intervalo volta sozinho ao padrão.
+
+Quando algo dá errado, fica registrado em `%LocalAppData%\Nook\nook.log`; anexe esse arquivo ao relatar um bug.
 
 ### Contribuindo
 
@@ -573,9 +587,11 @@ dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=
 
 ### Настройки
 
-Настройки лежат в `%LocalAppData%\Nook\settings.json` и записываются при выходе из программы. В файле хранятся выбранные видеокарта и процесс, позиция и состояние блокировки оверлея, параметры работы в лотке и оба сочетания клавиш в виде кодов виртуальных клавиш и модификаторов Windows.
+Настройки лежат в `%LocalAppData%\Nook\settings.json` и сохраняются через мгновение после каждого изменения. В файле хранятся выбранные видеокарта и процесс, позиция и состояние блокировки оверлея, параметры работы в лотке и оба сочетания клавиш в виде кодов виртуальных клавиш и модификаторов Windows.
 
-Удаление файла возвращает все значения по умолчанию.
+Удаление файла возвращает все значения по умолчанию. Файл, который не удалось прочитать, не перезаписывается, а сохраняется как `settings.bad.json`; значение вне допустимого диапазона сбрасывается к умолчанию только само.
+
+Если что-то идёт не так, это записывается в `%LocalAppData%\Nook\nook.log` — приложите этот файл к сообщению об ошибке.
 
 ### Участие в разработке
 
