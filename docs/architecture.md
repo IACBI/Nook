@@ -6,7 +6,7 @@ Written for anyone about to change the native code. English only; see the [READM
 
 A single WinForms timer ticks once per second on the UI thread and drives everything. One tick is:
 
-1. `PdhGpuMemoryReader.Read()` — one PDH collection, three counter arrays.
+1. `PdhGpuMemoryReader.Read()` — one PDH collection, five counter arrays. The engine array is optional: if it fails, the memory figures are still returned and only adapter load goes blank.
 2. `GpuTelemetryEngine.GetTelemetry(adapterName)` — temperature, clock and load from the vendor driver.
 3. Labels and overlay are updated from the values gathered above.
 
@@ -18,7 +18,7 @@ A second timer rebuilds the process list every ten seconds. That enumeration run
 |---|---|
 | Per-process memory | PDH `\GPU Process Memory(*)\Dedicated Usage` and `\Shared Usage`, instance names carry the PID |
 | Per-adapter memory | PDH `\GPU Adapter Memory(*)\Dedicated Usage` and `\Shared Usage`, instance names carry the LUID |
-| Adapter load | PDH `\GPU Engine(*)\Utilization Percentage`, maximum across the adapter's engines |
+| Adapter load | PDH `\GPU Engine(*)\Utilization Percentage`, summed across processes per physical engine, then the busiest engine |
 | Adapter names | DXGI `IDXGIFactory1::EnumAdapters1`, falling back to `D3DKMTQueryAdapterInfo` |
 | Temperature, core clock | NVIDIA NVML or AMD ADL, whichever loads |
 
@@ -39,13 +39,13 @@ Every name pointer is bounds-checked against the buffer before it is dereference
 
 ## DXGI without COM interop
 
-`GpuAdapterCatalog` calls `EnumAdapters1` and `GetDesc1` through their vtable slots instead of declaring COM interfaces. It needs two methods on two interfaces, and this keeps the whole adapter catalogue to one file with no generated interop assembly. The slot numbers are derived from the `IUnknown` → `IDXGIObject` → `IDXGIFactory1` inheritance chain and are commented where they are declared; they are the one thing in the file that will break silently if edited carelessly.
+`GpuAdapterCatalog` calls `EnumAdapters1` and `GetDesc1` through their vtable slots instead of declaring COM interfaces. It needs two methods on two interfaces, and this keeps the whole adapter catalogue to one file with no generated interop assembly. The slot numbers are derived from the `IUnknown` → `IDXGIObject` → `IDXGIFactory1` inheritance chain and are commented where they are declared; they are the one thing in the file that will break silently if edited carelessly, so `NativeLayoutTests` pins them and enumerates DXGI for real. `DXGI_ADAPTER_DESC1` must be marshalled with `CharSet.Unicode`; the default Ansi marshalling turns the description into garbage.
 
 Software adapters (the Microsoft Basic Render Driver) are filtered out by `DXGI_ADAPTER_FLAG_SOFTWARE`.
 
 ## Vendor telemetry
 
-Neither `nvml.dll` nor `atiadlxx.dll` ships with Windows, so both are loaded with `NativeLibrary.TryLoad` and every entry point is treated as optional. NVML devices are matched to the selected adapter by product name; if no NVML device matches but the adapter is an NVIDIA one, the first device is used. When the selected adapter belongs to neither vendor — an Intel iGPU, say — the sample comes back empty and the overlay drops the temperature and clock rows rather than showing another card's readings.
+Neither `nvml.dll` nor `atiadlxx.dll` ships with Windows, so both are loaded with `NativeLibrary.TryLoad` and every entry point is treated as optional. ADL writes the full `ADLODNPerformanceStatus` (eighteen ints) into the caller's buffer; the managed mirror must match it exactly, and ADL is not called at all if `Marshal.SizeOf` disagrees with the SDK size. NVML devices are matched to the selected adapter by product name; if no NVML device matches but the adapter is an NVIDIA one, the first device is used. When the selected adapter belongs to neither vendor — an Intel iGPU, say — the sample comes back empty and the overlay drops the temperature and clock rows rather than showing another card's readings.
 
 ## Overlay
 
@@ -53,9 +53,15 @@ Neither `nvml.dll` nor `atiadlxx.dll` ships with Windows, so both are loaded wit
 
 Rows are measured and laid out from the row list, so adding a metric is a matter of adding a row; the window resizes itself to fit. Rendering is skipped when neither the text nor the lock state changed, which is the common case between samples.
 
+## Settings and diagnostics
+
+`SettingsStore` writes through `settings.json.tmp` and a rename, so a crash mid-write leaves the previous file intact. It reads each property on its own: a field with the wrong type or an invalid hotkey falls back to its default without discarding the rest, and a file that is not JSON at all is copied to `settings.bad.json` before defaults are used. `MainForm` saves 1.5 seconds after the last change rather than only on exit. The selected GPU is stored as a LUID and a name, because a LUID is only unique until the next restart.
+
+`Log` appends to `%LocalAppData%\Nook\nook.log`, rolling to `nook.1.log` at 1 MB, and never throws. Sampling failures are logged once per distinct message, not once per second. `Program` routes unhandled UI, AppDomain and task exceptions there, and the release build embeds its PDB so stack traces carry line numbers.
+
 ## Tests
 
-`tests/Nook.Tests` covers the pure functions whose failures are silent rather than loud: the counter instance-name parsing, the byte formatting and the GPU name shortening. A mistake in the LUID parser does not throw — it attributes memory to the wrong adapter — so the instance-name strings Windows actually produces are pinned as test data.
+`tests/Nook.Tests` covers the code whose failures are silent rather than loud: the counter instance-name parsing and engine-load aggregation, the byte and hotkey formatting, the GPU name shortening, saved-GPU resolution, settings load and save, the log, and the hand-declared native layouts. A mistake in the LUID parser does not throw — it attributes memory to the wrong adapter — so the instance-name strings Windows actually produces are pinned as test data.
 
 ```powershell
 dotnet test tests/Nook.Tests
