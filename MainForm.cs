@@ -65,10 +65,8 @@ internal sealed class MainForm : Form
     private OverlayForm? _overlay;
     private List<ProcessItem> _allProcesses = [];
     private List<ProcessItem> _filteredProcesses = [];
+    private readonly ProcessTracker _processTracker = new();
     private bool _isLoadingProcesses;
-    private int? _selectedPid;
-    private string? _selectedProcessName;
-    private DateTime? _selectedStartTime;
     private long _sampleCount;
     private double _sampleTotalBytes;
     private long _peakBytes;
@@ -103,6 +101,7 @@ internal sealed class MainForm : Form
 
         _cornerMenu.Renderer = new DarkMenuRenderer();
         _trayMenu.Renderer = new DarkMenuRenderer();
+        _processTracker.RememberedName = _settings.SelectedProcessName;
 
         BuildLayout();
         InitializeTrayIcon();
@@ -681,9 +680,11 @@ internal sealed class MainForm : Form
             return;
         }
 
-        if (!IsSelectedProcessIdentityCurrent())
+        var monitored = _processTracker.Current;
+        if (monitored is not null && _processTracker.CheckAlive(pid => LookUpProcess(pid, monitored.Name)) == TrackerEvent.Exited)
         {
-            ClearProcessSelection($"{_selectedProcessName} exited or was replaced. Select it again.");
+            ResetStatistics();
+            SetStatus($"{monitored.Name} exited. Nook will follow it when it starts again.");
         }
 
         try
@@ -713,9 +714,9 @@ internal sealed class MainForm : Form
             RefreshGpuList(result);
             SampleSelectedProcess(processSamples, processShared);
             SampleSelectedGpu(result.AdapterDedicatedBytes!, result.AdapterSharedBytes!, result.AdapterUsagePercent!);
-            if (_selectedPid.HasValue && processSamples.ContainsKey(_selectedPid.Value))
+            if (_processTracker.Current is { } tracked && processSamples.ContainsKey(tracked.Pid))
             {
-                SetStatus($"Monitoring {_selectedProcessName} (PID {_selectedPid}).");
+                SetStatus($"Monitoring {tracked.Name} (PID {tracked.Pid}).");
             }
             UpdateOverlay();
         }
@@ -751,13 +752,13 @@ internal sealed class MainForm : Form
     {
         _lastProcessMemory = null;
         _lastProcessShared = null;
-        if (!_selectedPid.HasValue)
+        if (_processTracker.Current is not { } monitored)
         {
             return;
         }
 
-        var hasDedicated = dedicated.TryGetValue(_selectedPid.Value, out var dedicatedBytes);
-        var hasShared = shared.TryGetValue(_selectedPid.Value, out var sharedBytes);
+        var hasDedicated = dedicated.TryGetValue(monitored.Pid, out var dedicatedBytes);
+        var hasShared = shared.TryGetValue(monitored.Pid, out var sharedBytes);
         if (!hasDedicated && !hasShared)
         {
             _currentValue.Text = "—";
@@ -775,38 +776,6 @@ internal sealed class MainForm : Form
         _processSharedValue.Text = FormatBytes(sharedBytes);
         _lastProcessMemory = _currentValue.Text;
         _lastProcessShared = _processSharedValue.Text;
-    }
-
-    private bool IsSelectedProcessIdentityCurrent()
-    {
-        if (!_selectedPid.HasValue || _selectedProcessName is null)
-        {
-            return true;
-        }
-
-        try
-        {
-            using var process = Process.GetProcessById(_selectedPid.Value);
-            if (!string.Equals(process.ProcessName, _selectedProcessName, StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
-
-            var startTime = TryGetStartTime(process);
-            return !_selectedStartTime.HasValue || !startTime.HasValue || startTime.Value == _selectedStartTime.Value;
-        }
-        catch (ArgumentException)
-        {
-            return false;
-        }
-        catch (InvalidOperationException)
-        {
-            return false;
-        }
-        catch
-        {
-            return true;
-        }
     }
 
     private void SampleSelectedGpu(
@@ -1010,6 +979,19 @@ internal sealed class MainForm : Form
             }
 
             _allProcesses = processes;
+
+            // Reconcile against the unfiltered list: a monitored process hidden by the search or the
+            // VRAM filter is still running, and must not be mistaken for a restart.
+            var reconciled = _processTracker.Reconcile(processes, TryGetStartTime);
+            if (reconciled is TrackerEvent.Attached or TrackerEvent.Reattached && _processTracker.Current is { } process)
+            {
+                RememberProcessName(process.Name);
+                ResetStatistics();
+                SetStatus(reconciled == TrackerEvent.Attached
+                    ? $"Monitoring {process.Name} (PID {process.Pid})."
+                    : $"Reattached to restarted {process.Name} (PID {process.Pid}).");
+            }
+
             ApplyProcessFilters();
         }
         catch (Exception ex)
@@ -1030,9 +1012,6 @@ internal sealed class MainForm : Form
             return;
         }
 
-        var previousPid = _selectedPid;
-        var previousName = _selectedProcessName;
-
         var searchText = _searchBox.Text.Trim();
         var onlyVram = _vramFilterCheck.Checked;
 
@@ -1051,35 +1030,24 @@ internal sealed class MainForm : Form
             return true;
         }).ToList();
 
+        // The monitored process stays in the picker even when the filters hide it, so the
+        // selection never goes blank while Nook is still measuring it.
+        var monitored = _processTracker.Current;
+        var items = new List<object>(_filteredProcesses.Count + 1);
+        if (monitored is not null && !_filteredProcesses.Contains(monitored))
+        {
+            items.Add(monitored);
+        }
+
+        items.AddRange(_filteredProcesses);
+
         _isRefreshingProcesses = true;
         _processSelector.BeginUpdate();
         try
         {
             _processSelector.Items.Clear();
-            _processSelector.Items.AddRange(_filteredProcesses.Cast<object>().ToArray());
-
-            ProcessItem? match = previousPid.HasValue
-                ? _filteredProcesses.FirstOrDefault(item => item.Pid == previousPid && string.Equals(item.Name, previousName, StringComparison.OrdinalIgnoreCase))
-                : FindUniqueProcessByName(_settings.SelectedProcessName);
-
-            if (match is null && previousName is not null)
-            {
-                // The target restarted under a new PID: follow it, but only when the name
-                // resolves to exactly one process, so we never guess between siblings.
-                match = FindUniqueProcessByName(previousName);
-                if (match is not null)
-                {
-                    AttachTo(match, true);
-                    SetStatus($"Reattached to restarted {match.Name} (PID {match.Pid}).");
-                }
-            }
-
-            if (match is not null && !previousPid.HasValue)
-            {
-                AttachTo(match, true);
-            }
-
-            _processSelector.SelectedItem = match;
+            _processSelector.Items.AddRange(items.ToArray());
+            _processSelector.SelectedItem = monitored;
         }
         finally
         {
@@ -1102,36 +1070,34 @@ internal sealed class MainForm : Form
         }
         else
         {
-            ClearProcessSelection(null);
+            ClearProcessSelection();
         }
     }
 
     private void AttachTo(ProcessItem process, bool resetStatistics)
     {
-        _selectedPid = process.Pid;
-        _selectedProcessName = process.Name;
-        _selectedStartTime = TryGetStartTime(process.Pid);
-        if (_settings.SelectedProcessName != process.Name)
-        {
-            _settings.SelectedProcessName = process.Name;
-            RequestSave();
-        }
+        _processTracker.Attach(process, TryGetStartTime(process.Pid));
+        RememberProcessName(process.Name);
         if (resetStatistics)
         {
             ResetStatistics();
         }
     }
 
-    private void ClearProcessSelection(string? status)
+    /// <summary>Saves the monitored name so it is followed again after Nook restarts.</summary>
+    private void RememberProcessName(string name)
     {
-        _selectedPid = null;
-        _selectedProcessName = null;
-        _selectedStartTime = null;
-        ResetStatistics();
-        if (status is not null)
+        if (_settings.SelectedProcessName != name)
         {
-            SetStatus(status);
+            _settings.SelectedProcessName = name;
+            RequestSave();
         }
+    }
+
+    private void ClearProcessSelection()
+    {
+        _processTracker.Detach(forget: true);
+        ResetStatistics();
     }
 
     private void ResetStatistics()
@@ -1202,7 +1168,7 @@ internal sealed class MainForm : Form
             useShared ? _lastGpuShared : _lastGpuMemory,
             _lastGpuTemp,
             _lastGpuClock,
-            _selectedProcessName,
+            _processTracker.Current?.Name,
             useShared ? _lastProcessShared : _lastProcessMemory);
     }
 
@@ -1405,13 +1371,6 @@ internal sealed class MainForm : Form
         }
     }
 
-    private ProcessItem? FindUniqueProcessByName(string? name)
-    {
-        if (string.IsNullOrWhiteSpace(name)) return null;
-        var matches = _filteredProcesses.Where(item => string.Equals(item.Name, name, StringComparison.OrdinalIgnoreCase)).Take(2).ToList();
-        return matches.Count == 1 ? matches[0] : null;
-    }
-
     private static List<ProcessItem> GetProcesses()
     {
         var result = new List<ProcessItem>();
@@ -1463,6 +1422,29 @@ internal sealed class MainForm : Form
         catch { return null; }
     }
 
+    /// <summary>Returns the live name and start time of a PID, or null once no process holds it.</summary>
+    private static (string Name, DateTime? StartTime)? LookUpProcess(int pid, string expectedName)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(pid);
+            return (process.ProcessName, TryGetStartTime(process));
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+        catch
+        {
+            // Not being able to read the process is not proof that it exited, so keep following it.
+            return (expectedName, null);
+        }
+    }
+
     internal static string FormatBytes(double bytes)
     {
         const double megabyte = 1024d * 1024d;
@@ -1477,11 +1459,6 @@ internal sealed class MainForm : Form
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [DllImport("user32.dll", ExactSpelling = true)]
     private static extern bool UnregisterHotKey(IntPtr window, int id);
-
-    private sealed record ProcessItem(int Pid, string Name)
-    {
-        public override string ToString() => $"{Name} (PID {Pid})";
-    }
 
     private readonly record struct UiColors(Color Background, Color Surface, Color Elevated, Color Foreground, Color Muted, Color Border, Color Accent);
 
