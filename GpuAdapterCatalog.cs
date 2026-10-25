@@ -82,6 +82,30 @@ internal static class GpuAdapterCatalog
         return adapters;
     }
 
+    /// <summary>
+    /// Resolves the saved GPU. A LUID is only unique until the next restart, so after a reboot
+    /// the name decides, and only when exactly one adapter carries it; otherwise the first adapter.
+    /// </summary>
+    public static GpuAdapterItem? FindAdapter(IReadOnlyList<GpuAdapterItem> adapters, GpuLuid? luid, string? name)
+    {
+        var byLuid = luid.HasValue ? adapters.FirstOrDefault(adapter => adapter.Luid == luid.Value) : null;
+        if (byLuid is not null)
+        {
+            return byLuid;
+        }
+
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            var byName = adapters.Where(adapter => string.Equals(adapter.Name, name, StringComparison.OrdinalIgnoreCase)).Take(2).ToList();
+            if (byName.Count == 1)
+            {
+                return byName[0];
+            }
+        }
+
+        return adapters.Count > 0 ? adapters[0] : null;
+    }
+
     public static string GetAdapterName(GpuLuid luid)
     {
         try

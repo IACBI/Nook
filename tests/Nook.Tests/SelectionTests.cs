@@ -14,13 +14,13 @@ public class SelectionTests
     [Fact]
     public void FindAdapter_prefers_the_saved_luid()
     {
-        Assert.Same(Nvidia, MainForm.FindAdapter([Intel, Nvidia], Nvidia.Luid, Intel.Name));
+        Assert.Same(Nvidia, GpuAdapterCatalog.FindAdapter([Intel, Nvidia], Nvidia.Luid, Intel.Name));
     }
 
     [Fact]
     public void FindAdapter_falls_back_to_the_name_when_the_luid_changed_after_a_reboot()
     {
-        Assert.Same(Nvidia, MainForm.FindAdapter([Intel, Nvidia], new GpuLuid(0x1234, 0), Nvidia.Name));
+        Assert.Same(Nvidia, GpuAdapterCatalog.FindAdapter([Intel, Nvidia], new GpuLuid(0x1234, 0), Nvidia.Name));
     }
 
     [Fact]
@@ -28,19 +28,19 @@ public class SelectionTests
     {
         var twin = Nvidia with { Luid = new GpuLuid(0xABCD, 0) };
 
-        Assert.Same(Intel, MainForm.FindAdapter([Intel, Nvidia, twin], new GpuLuid(0x1234, 0), Nvidia.Name));
+        Assert.Same(Intel, GpuAdapterCatalog.FindAdapter([Intel, Nvidia, twin], new GpuLuid(0x1234, 0), Nvidia.Name));
     }
 
     [Fact]
     public void FindAdapter_uses_the_first_adapter_when_nothing_was_saved()
     {
-        Assert.Same(Intel, MainForm.FindAdapter([Intel, Nvidia], null, null));
+        Assert.Same(Intel, GpuAdapterCatalog.FindAdapter([Intel, Nvidia], null, null));
     }
 
     [Fact]
     public void FindAdapter_returns_null_without_adapters()
     {
-        Assert.Null(MainForm.FindAdapter([], Nvidia.Luid, Nvidia.Name));
+        Assert.Null(GpuAdapterCatalog.FindAdapter([], Nvidia.Luid, Nvidia.Name));
     }
 
     [Theory]
@@ -49,6 +49,14 @@ public class SelectionTests
     [InlineData(0x0002u, 0x70u, "Ctrl+F1")]
     public void FormatHotkey_matches_the_windows_menu_spelling(uint modifiers, uint key, string expected)
     {
-        Assert.Equal(expected, MainForm.FormatHotkey(modifiers, key));
+        Assert.Equal(expected, GlobalHotkeys.Format(modifiers, key));
+    }
+
+    [Theory]
+    [InlineData(0x0006u, 0x56u, 0x0006u, 0x4Cu, "Ctrl+Shift+V / L")]
+    [InlineData(0x0006u, 0x56u, 0x0001u, 0x4Cu, "Ctrl+Shift+V / Alt+L")]
+    public void FormatPair_drops_shared_modifiers_from_the_second_shortcut(uint firstModifiers, uint firstKey, uint secondModifiers, uint secondKey, string expected)
+    {
+        Assert.Equal(expected, GlobalHotkeys.FormatPair(firstModifiers, firstKey, secondModifiers, secondKey));
     }
 }

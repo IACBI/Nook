@@ -208,7 +208,7 @@ internal sealed class OverlayForm : Form
     private void DrawBackdrop(Graphics g)
     {
         var rect = new Rectangle(1, 1, Width - 2, Height - 2);
-        using var backdropPath = CreateRoundedRectanglePath(rect, 8);
+        using var backdropPath = GraphicsPaths.RoundedRectangle(rect, 8);
         using (var backdropBrush = new SolidBrush(Color.FromArgb(170, 11, 15, 23)))
         {
             g.FillPath(backdropBrush, backdropPath);
@@ -306,23 +306,6 @@ internal sealed class OverlayForm : Form
                 DeleteObject(hBitmap);
             }
         }
-    }
-
-    private static GraphicsPath CreateRoundedRectanglePath(Rectangle rect, int radius)
-    {
-        var path = new GraphicsPath();
-        var diameter = radius * 2;
-        var arc = new Rectangle(rect.X, rect.Y, diameter, diameter);
-
-        path.AddArc(arc, 180, 90);
-        arc.X = rect.Right - diameter;
-        path.AddArc(arc, 270, 90);
-        arc.Y = rect.Bottom - diameter;
-        path.AddArc(arc, 0, 90);
-        arc.X = rect.X;
-        path.AddArc(arc, 90, 90);
-        path.CloseFigure();
-        return path;
     }
 
     public void MoveToCorner(OverlayCorner corner)
