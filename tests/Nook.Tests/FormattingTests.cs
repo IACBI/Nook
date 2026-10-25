@@ -11,14 +11,14 @@ public class ByteFormattingTests
     [InlineData(1024 * 1024 * 3 / 2, "1.5 MB")]
     [InlineData(512L * 1024 * 1024, "512.0 MB")]
     public void Megabytes_keep_one_decimal(double bytes, string expected) =>
-        Assert.Equal(expected, MainForm.FormatBytes(bytes));
+        Assert.Equal(expected, DisplayFormat.Bytes(bytes));
 
     [Theory]
     [InlineData(1024L * 1024 * 1024, "1.00 GB")]
     [InlineData(1024L * 1024 * 1024 * 3 / 2, "1.50 GB")]
     [InlineData(8L * 1024 * 1024 * 1024, "8.00 GB")]
     public void Gigabytes_take_over_at_the_boundary(double bytes, string expected) =>
-        Assert.Equal(expected, MainForm.FormatBytes(bytes));
+        Assert.Equal(expected, DisplayFormat.Bytes(bytes));
 
     /// <summary>
     /// The window runs with invariant globalization, so the decimal separator stays a dot
@@ -26,7 +26,7 @@ public class ByteFormattingTests
     /// </summary>
     [Fact]
     public void Decimal_separator_does_not_follow_the_system_locale() =>
-        Assert.Contains('.', MainForm.FormatBytes(1024L * 1024 * 1024));
+        Assert.Contains('.', DisplayFormat.Bytes(1024L * 1024 * 1024));
 }
 
 public class GpuNameTests
