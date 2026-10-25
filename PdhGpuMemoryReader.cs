@@ -37,6 +37,7 @@ internal sealed class PdhGpuMemoryReader : IDisposable
     private readonly Dictionary<GpuLuid, long> _adapterDedicated = new();
     private readonly Dictionary<GpuLuid, long> _adapterShared = new();
     private readonly Dictionary<GpuLuid, double> _adapterUsage = new();
+    private readonly Dictionary<GpuEngineKey, double> _engineUsage = new();
 
     static PdhGpuMemoryReader()
     {
@@ -94,8 +95,7 @@ internal sealed class PdhGpuMemoryReader : IDisposable
         if (!TryCollect(_processDedicatedCounter, PdhFmtLarge, _processDedicatedBuffer, out var processDedicatedCount, out var error) ||
             !TryCollect(_processSharedCounter, PdhFmtLarge, _processSharedBuffer, out var processSharedCount, out error) ||
             !TryCollect(_adapterDedicatedCounter, PdhFmtLarge, _adapterDedicatedBuffer, out var adapterDedicatedCount, out error) ||
-            !TryCollect(_adapterSharedCounter, PdhFmtLarge, _adapterSharedBuffer, out var adapterSharedCount, out error) ||
-            !TryCollect(_engineUsageCounter, PdhFmtDouble, _engineBuffer, out var engineCount, out error))
+            !TryCollect(_adapterSharedCounter, PdhFmtLarge, _adapterSharedBuffer, out var adapterSharedCount, out error))
         {
             return GpuReadResult.Unavailable(error!);
         }
@@ -108,28 +108,26 @@ internal sealed class PdhGpuMemoryReader : IDisposable
             return GpuReadResult.Unavailable(error!);
         }
 
-        _adapterUsage.Clear();
-        for (var index = 0; index < engineCount; index++)
+        // The engine counter is optional: losing it blanks adapter load only, not the memory figures.
+        _engineUsage.Clear();
+        if (TryCollect(_engineUsageCounter, PdhFmtDouble, _engineBuffer, out var engineCount, out _))
         {
-            if (!TryGetItem(_engineBuffer, index, out var name, out var value))
+            for (var index = 0; index < engineCount; index++)
             {
-                return GpuReadResult.Unavailable("Windows returned an invalid GPU counter instance name.");
-            }
+                if (!TryGetItem(_engineBuffer, index, out var name, out var value) || !TryGetEngineKey(name, out var key) ||
+                    !IsValidCounterData(value.CStatus) || double.IsNaN(value.DoubleValue) ||
+                    double.IsInfinity(value.DoubleValue) || value.DoubleValue < 0)
+                {
+                    continue;
+                }
 
-            if (!TryGetLuid(name, out var luid) || !IsValidCounterData(value.CStatus) ||
-                double.IsNaN(value.DoubleValue) || double.IsInfinity(value.DoubleValue))
-            {
-                continue;
-            }
-
-            // Every engine (3D, copy, video decode, …) reports separately; the adapter is
-            // as busy as its busiest engine, which is what Task Manager shows too.
-            var usage = Math.Clamp(value.DoubleValue, 0, 100);
-            if (!_adapterUsage.TryGetValue(luid, out var current) || usage > current)
-            {
-                _adapterUsage[luid] = usage;
+                // Task Manager sums the processes sharing one physical engine before taking the busiest engine.
+                _engineUsage.TryGetValue(key, out var total);
+                _engineUsage[key] = total + value.DoubleValue;
             }
         }
+
+        AggregateEngineUsage(_engineUsage, _adapterUsage);
 
         return GpuReadResult.Available(_processDedicated, _processShared, _adapterDedicated, _adapterShared, _adapterUsage);
     }
@@ -345,6 +343,60 @@ internal sealed class PdhGpuMemoryReader : IDisposable
         return true;
     }
 
+    /// <summary>Reads the engine key (LUID, physical adapter, engine index) out of a <c>…_phys_0_eng_3_…</c> name.</summary>
+    internal static bool TryGetEngineKey(ReadOnlySpan<char> name, out GpuEngineKey key)
+    {
+        key = default;
+        if (!TryGetLuid(name, out var luid) || !TryGetIndexAfter(name, "_phys_", out var phys) ||
+            !TryGetIndexAfter(name, "_eng_", out var engine))
+        {
+            return false;
+        }
+
+        key = new GpuEngineKey(luid, phys, engine);
+        return true;
+    }
+
+    /// <summary>
+    /// Parses the non-negative integer that follows <paramref name="token"/>, up to the next
+    /// underscore or the end of the name.
+    /// </summary>
+    private static bool TryGetIndexAfter(ReadOnlySpan<char> name, string token, out int index)
+    {
+        index = 0;
+        var start = name.IndexOf(token, StringComparison.OrdinalIgnoreCase);
+        if (start < 0)
+        {
+            return false;
+        }
+
+        var digits = name[(start + token.Length)..];
+        var end = digits.IndexOf('_');
+        if (end < 0)
+        {
+            end = digits.Length;
+        }
+
+        return int.TryParse(digits[..end], NumberStyles.None, CultureInfo.InvariantCulture, out index);
+    }
+
+    /// <summary>
+    /// Adapter load as Task Manager reports it: each physical engine's utilisation is the sum of
+    /// all processes on it, clamped to 100, and the adapter takes the busiest of its engines.
+    /// </summary>
+    internal static void AggregateEngineUsage(Dictionary<GpuEngineKey, double> engineTotals, Dictionary<GpuLuid, double> adapterUsage)
+    {
+        adapterUsage.Clear();
+        foreach (var (key, total) in engineTotals)
+        {
+            var usage = Math.Clamp(total, 0, 100);
+            if (!adapterUsage.TryGetValue(key.Luid, out var current) || usage > current)
+            {
+                adapterUsage[key.Luid] = usage;
+            }
+        }
+    }
+
     private static bool IsNoDataStatus(int status) => status == PdhNoData || status == PdhCStatusInvalidData || status == PdhInvalidData || status == PdhCStatusNoInstance;
 
     private static bool IsValidCounterData(uint status) => status == PdhCStatusValidData || status == PdhCStatusNewData;
@@ -429,6 +481,9 @@ internal readonly record struct GpuLuid(uint LowPart, uint HighPart)
 {
     public override string ToString() => $"LUID 0x{HighPart:X8}_0x{LowPart:X8}";
 }
+
+/// <summary>One physical engine of one adapter, e.g. the 3D engine 0 of <c>phys_0</c>.</summary>
+internal readonly record struct GpuEngineKey(GpuLuid Luid, int Phys, int Engine);
 
 internal readonly record struct GpuReadResult(
     bool IsAvailable,
