@@ -802,7 +802,7 @@ internal sealed class MainForm : Form
         }
 
         _lastGpuName = gpu.Name;
-        var telemetry = _telemetryEngine.GetTelemetry(gpu.Name);
+        var telemetry = _telemetryEngine.GetTelemetry(gpu.Luid, gpu.Name);
 
         if (usage.TryGetValue(gpu.Luid, out var percent))
         {

@@ -7,6 +7,9 @@ internal static class GpuAdapterCatalog
     private const int DxgiErrorNotFound = unchecked((int)0x887A0002);
     private const uint DxgiAdapterFlagSoftware = 2;
     private const uint KmtQueryAdapterRegistryInfo = 8;
+    private const uint KmtQueryAdapterAddress = 6;
+    /// <summary>Size of <c>D3DKMT_ADAPTERADDRESS</c> in the WDK: three 32-bit unsigned ints.</summary>
+    internal const int D3dkmtAdapterAddressNativeSize = 3 * sizeof(uint);
     // Slot numbers from the vtables in the SDK's dxgi.h. IUnknown (3) and IDXGIObject (4) come first;
     // IDXGIFactory adds 5 more before IDXGIFactory1::EnumAdapters1, IDXGIAdapter adds 3 before
     // IDXGIAdapter1::GetDesc1. A wrong slot calls a different method, and nothing reports it.
@@ -127,6 +130,69 @@ internal static class GpuAdapterCatalog
         return luid.ToString();
     }
 
+    /// <summary>
+    /// Size of the managed mirror of <c>D3DKMT_ADAPTERADDRESS</c>. The query is skipped unless it
+    /// equals <see cref="D3dkmtAdapterAddressNativeSize"/>.
+    /// </summary>
+    internal static int D3dkmtAdapterAddressManagedSize => Marshal.SizeOf<D3dkmtAdapterAddress>();
+
+    /// <summary>
+    /// Reads the PCI bus, device and function that the driver reports for the adapter. Vendor
+    /// libraries identify their devices by the same location, which is how telemetry is matched
+    /// to the right card. Returns false when the location cannot be read.
+    /// </summary>
+    internal static bool TryGetPciAddress(GpuLuid luid, out GpuPciAddress address)
+    {
+        address = default;
+        if (D3dkmtAdapterAddressManagedSize != D3dkmtAdapterAddressNativeSize)
+        {
+            return false;
+        }
+
+        try
+        {
+            var openAdapter = new D3dkmtOpenAdapterFromLuid
+            {
+                AdapterLuid = new NativeLuid { LowPart = luid.LowPart, HighPart = unchecked((int)luid.HighPart) }
+            };
+            if (D3DKMTOpenAdapterFromLuid(ref openAdapter) != 0 || openAdapter.AdapterHandle == 0)
+            {
+                return false;
+            }
+
+            try
+            {
+                unsafe
+                {
+                    D3dkmtAdapterAddress native = default;
+                    var query = new D3dkmtQueryAdapterInfo
+                    {
+                        AdapterHandle = openAdapter.AdapterHandle,
+                        Type = KmtQueryAdapterAddress,
+                        PrivateDriverData = (IntPtr)(&native),
+                        PrivateDriverDataSize = (uint)sizeof(D3dkmtAdapterAddress)
+                    };
+                    if (D3DKMTQueryAdapterInfo(ref query) != 0)
+                    {
+                        return false;
+                    }
+
+                    address = new GpuPciAddress(native.BusNumber, native.DeviceNumber, native.FunctionNumber);
+                    return true;
+                }
+            }
+            finally
+            {
+                D3DKMTCloseAdapter(ref openAdapter.AdapterHandle);
+            }
+        }
+        catch (EntryPointNotFoundException)
+        {
+            // Older Windows implementations do not answer this query.
+            return false;
+        }
+    }
+
     private static IntPtr CallEnumAdapters1(IntPtr factory, uint index, out int result)
     {
         var method = GetVtableMethod<EnumAdapters1Delegate>(factory, EnumAdapters1VtableSlot);
@@ -200,6 +266,14 @@ internal static class GpuAdapterCatalog
     }
 
     [StructLayout(LayoutKind.Sequential)]
+    private struct D3dkmtAdapterAddress
+    {
+        public uint BusNumber;
+        public uint DeviceNumber;
+        public uint FunctionNumber;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
     private struct D3dkmtOpenAdapterFromLuid
     {
         public NativeLuid AdapterLuid;
@@ -237,3 +311,6 @@ internal sealed record GpuAdapterItem(GpuLuid Luid, string Name)
 {
     public override string ToString() => Name;
 }
+
+/// <summary>PCI location of a display adapter. The domain is omitted: D3DKMT does not report it.</summary>
+internal readonly record struct GpuPciAddress(uint Bus, uint Device, uint Function);
