@@ -4,13 +4,17 @@ Written for anyone about to change the native code. English only; see the [READM
 
 ## Sampling loop
 
-A single WinForms timer ticks once per second on the UI thread and drives everything. One tick is:
+A driver call that hangs — during a TDR, a driver update, resume from sleep — cannot be cancelled, so none runs on the UI thread. `GpuSampler` owns a dedicated background thread that samples once per second. One sample, in `NativeSampleSource`, is:
 
 1. `PdhGpuMemoryReader.Read()` — one PDH collection, five counter arrays. The engine array is optional: if it fails, the memory figures are still returned and only adapter load goes blank.
-2. `GpuTelemetryEngine.GetTelemetry(adapterName)` — temperature, clock and load from the vendor driver.
-3. Labels and overlay are updated from the values gathered above.
+2. `GpuTelemetryEngine.GetTelemetry(luid, name)` — temperature, clock and load from the vendor driver, for the GPU the UI has selected.
+3. The monitored PID's name and start time, so the UI can tell whether it is still the same process.
 
-A second timer rebuilds the process list every ten seconds. That enumeration runs on a thread pool thread, because walking a few hundred processes is slow enough to show up as a stutter in the overlay.
+The source is created, used and disposed on that thread only, so PDH, NVML and ADL are never touched from two threads and need no locks. The reader's dictionaries are reused between reads, so `GpuSnapshot.FromRead` copies them before the snapshot is posted to the UI with `BeginInvoke`. In the other direction the UI publishes an immutable `SampleRequest` (selected GPU and process) that the thread reads at the start of each sample; a snapshot always says which request it answers, so readings taken for the previous selection are not shown for the new one.
+
+A WinForms timer on the UI thread watches `GpuSampler.BusyFor`. After three seconds without an answer it blanks the readings, shows "The GPU driver is not responding" and logs it once; the next snapshot clears it. Samples slower than 250 ms are logged at most once a minute. On exit the window waits at most two seconds for the thread; a thread still stuck in the driver is a background thread and does not keep the process alive.
+
+DXGI enumeration at startup and the process-list rebuild every ten seconds run on thread pool threads for the same reason.
 
 ## Where the numbers come from
 
@@ -67,7 +71,7 @@ Rows are measured and laid out from the row list, so adding a metric is a matter
 
 ## Tests
 
-`tests/Nook.Tests` covers the code whose failures are silent rather than loud: the counter instance-name parsing and engine-load aggregation, the byte and hotkey formatting, the GPU name shortening, saved-GPU resolution, vendor-device matching, process tracking, settings load and save, the log, and the hand-declared native layouts. A mistake in the LUID parser does not throw — it attributes memory to the wrong adapter — so the instance-name strings Windows actually produces are pinned as test data.
+`tests/Nook.Tests` covers the code whose failures are silent rather than loud: the counter instance-name parsing and engine-load aggregation, the byte and hotkey formatting, the GPU name shortening, saved-GPU resolution, vendor-device matching, process tracking, the sampler thread (with a source that can be made to hang), settings load and save, the log, and the hand-declared native layouts. A mistake in the LUID parser does not throw — it attributes memory to the wrong adapter — so the instance-name strings Windows actually produces are pinned as test data.
 
 ```powershell
 dotnet test tests/Nook.Tests
