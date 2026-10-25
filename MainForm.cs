@@ -772,8 +772,8 @@ internal sealed class MainForm : Form
         {
             // The snapshot answers for the PID it was asked about; right after a new pick it may still describe the old one.
             var monitored = _processTracker.Current;
-            if (monitored is not null && snapshot.Request.Pid == monitored.Pid &&
-                _processTracker.CheckAlive(_ => snapshot.Process) == TrackerEvent.Exited)
+            if (monitored is not null && snapshot.Request.Pid == monitored.Pid && snapshot.Process.Checked &&
+                _processTracker.CheckAlive(_ => snapshot.Process.Live) == TrackerEvent.Exited)
             {
                 ResetStatistics();
                 SetStatus($"{monitored.Name} exited. Nook will follow it when it starts again.");

@@ -60,6 +60,8 @@ public class GpuSamplerTests
         Assert.False(failed!.IsAvailable);
         Assert.Contains("boom", failed.Error);
         Assert.IsType<InvalidOperationException>(failed.ErrorException);
+        // A failed sample never looked at the process, so it must not read as "the process exited".
+        Assert.False(failed.Process.Checked);
         Assert.True(published.TryTake(out var next, Patience));
         Assert.True(next!.IsAvailable);
     }
@@ -144,6 +146,20 @@ public class GpuSamplerTests
     }
 
     [Fact]
+    public void A_lookup_that_found_no_process_is_distinct_from_no_lookup()
+    {
+        var gone = ProcessLookup.Of(null);
+        var alive = ProcessLookup.Of(("game", null));
+        ProcessLookup notChecked = default;
+
+        Assert.True(gone.Checked);
+        Assert.Null(gone.Live);
+        Assert.True(alive.Checked);
+        Assert.Equal("game", alive.Live!.Value.Name);
+        Assert.False(notChecked.Checked);
+    }
+
+    [Fact]
     public void Stop_before_start_returns_immediately()
     {
         using var source = new FakeSource();
@@ -162,7 +178,7 @@ public class GpuSamplerTests
         var read = GpuReadResult.Available(processDedicated, new Dictionary<int, long>(), new Dictionary<GpuLuid, long>(), new Dictionary<GpuLuid, long>(), adapterUsage);
         var names = new Dictionary<GpuLuid, string> { [luid] = "NVIDIA" };
 
-        var snapshot = GpuSnapshot.FromRead(SampleRequest.None, read, names, default, null);
+        var snapshot = GpuSnapshot.FromRead(SampleRequest.None, read, names, default, default);
         processDedicated[1760] = 4096;
         processDedicated[42] = 1;
         adapterUsage.Clear();
@@ -215,7 +231,7 @@ public class GpuSamplerTests
             }
 
             var empty = GpuReadResult.Available(new Dictionary<int, long>(), new Dictionary<int, long>(), new Dictionary<GpuLuid, long>(), new Dictionary<GpuLuid, long>(), new Dictionary<GpuLuid, double>());
-            return GpuSnapshot.FromRead(request, empty, new Dictionary<GpuLuid, string>(), default, null);
+            return GpuSnapshot.FromRead(request, empty, new Dictionary<GpuLuid, string>(), default, default);
         }
 
         public void Dispose()

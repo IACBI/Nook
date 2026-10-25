@@ -27,10 +27,13 @@ internal sealed record GpuSnapshot(
     IReadOnlyDictionary<GpuLuid, double> AdapterUsagePercent,
     IReadOnlyDictionary<GpuLuid, string> AdapterNames,
     GpuTelemetrySample Telemetry,
-    (string Name, DateTime? StartTime)? Process)
+    ProcessLookup Process)
 {
-    /// <summary>A sample that produced no counter data; only the process lookup may still be meaningful.</summary>
-    public static GpuSnapshot Unavailable(SampleRequest request, string error, Exception? exception, (string Name, DateTime? StartTime)? process = null) =>
+    /// <summary>
+    /// A sample that produced no counter data. The process lookup is kept only when it really ran:
+    /// a sample that failed before reaching it says nothing about whether the process exited.
+    /// </summary>
+    public static GpuSnapshot Unavailable(SampleRequest request, string error, Exception? exception, ProcessLookup process = default) =>
         new(request, false, error, exception,
             new Dictionary<int, long>(), new Dictionary<int, long>(),
             new Dictionary<GpuLuid, long>(), new Dictionary<GpuLuid, long>(),
@@ -43,7 +46,7 @@ internal sealed record GpuSnapshot(
         GpuReadResult read,
         IReadOnlyDictionary<GpuLuid, string> adapterNames,
         GpuTelemetrySample telemetry,
-        (string Name, DateTime? StartTime)? process) =>
+        ProcessLookup process) =>
         new(request, true, null, null,
             new Dictionary<int, long>(read.ProcessDedicatedBytes!),
             new Dictionary<int, long>(read.ProcessSharedBytes!),
@@ -52,6 +55,15 @@ internal sealed record GpuSnapshot(
             new Dictionary<GpuLuid, double>(read.AdapterUsagePercent!),
             new Dictionary<GpuLuid, string>(adapterNames),
             telemetry, process);
+}
+
+/// <summary>
+/// The monitored process as the sampler found it. <see cref="Checked"/> separates "looked and it is
+/// gone" (<see cref="Live"/> null) from "never looked", which the default value means.
+/// </summary>
+internal readonly record struct ProcessLookup(bool Checked, (string Name, DateTime? StartTime)? Live)
+{
+    public static ProcessLookup Of((string Name, DateTime? StartTime)? live) => new(true, live);
 }
 
 /// <summary>Produces one sample. Created, used and disposed on the sampler thread only.</summary>
