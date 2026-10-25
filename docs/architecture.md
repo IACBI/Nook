@@ -1,6 +1,23 @@
 # Architecture
 
-Written for anyone about to change the native code. English only; see the [README](../README.md) for user-facing documentation.
+Written for anyone about to change the native code. English only; see the [README](../README.md) for user-facing documentation, and [releasing.md](releasing.md) for cutting a release.
+
+## Code map
+
+| File | Role |
+|---|---|
+| `MainForm.cs` | Window lifecycle, hotkey registration, settings saving, status line |
+| `MainForm.Layout.cs` | Controls and theme application |
+| `MainForm.Sampling.cs` | Applying snapshots, the watchdog, the GPU picker |
+| `MainForm.Processes.cs` | Process list, filters and the monitored selection |
+| `MainForm.Overlay.cs`, `MainForm.Tray.cs` | Overlay and tray control |
+| `GpuSampler.cs`, `NativeSampleSource.cs` | The background sampling thread and what it reads |
+| `PdhGpuMemoryReader.cs`, `GpuTelemetryEngine.cs`, `GpuAdapterCatalog.cs` | PDH, NVML/ADL and DXGI/D3DKMT interop |
+| `ProcessTracker.cs`, `ProcessCatalog.cs` | Which process is monitored, and reading processes |
+| `AppTheme.cs`, `DarkMenuRenderer.cs`, `OverlayForm.cs` | Look and drawing |
+| `AppSettings.cs`, `Log.cs`, `StartupEntry.cs`, `GlobalHotkeys.cs` | Persistence, diagnostics and Windows integration |
+
+`MainForm` is split into partial files by concern; anything that does not need the window lives in a type of its own so it can be tested without one.
 
 ## Sampling loop
 
