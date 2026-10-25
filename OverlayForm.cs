@@ -51,6 +51,8 @@ internal sealed class OverlayForm : Form
     public OverlayForm()
     {
         FormBorderStyle = FormBorderStyle.None;
+        // The default WindowsDefaultLocation makes Show() discard the restored position.
+        StartPosition = FormStartPosition.Manual;
         ShowInTaskbar = false;
         TopMost = true;
         AutoScaleMode = AutoScaleMode.Dpi;
