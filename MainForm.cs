@@ -48,7 +48,9 @@ internal sealed class MainForm : Form
     private readonly CheckBox _overlayLocked = new() { Text = "Click-through locked" };
     private readonly ContextMenuStrip _cornerMenu = new();
     private readonly ToolTip _toolTip = new() { AutomaticDelay = 250, AutoPopDelay = 5000, InitialDelay = 250, ReshowDelay = 100, ShowAlways = true };
-    private readonly System.Windows.Forms.Timer _sampleTimer = new() { Interval = 1000 };
+    // Sampling runs on GpuSampler's thread; this timer only watches it, so it keeps ticking when a driver hangs.
+    private readonly System.Windows.Forms.Timer _watchdogTimer = new() { Interval = 1000 };
+    private static readonly TimeSpan SamplerStallThreshold = TimeSpan.FromSeconds(3);
     private readonly System.Windows.Forms.Timer _processRefreshTimer = new() { Interval = 10000 };
     // Debounced so dragging the overlay or toggling options writes the file once, not per event.
     private readonly System.Windows.Forms.Timer _saveTimer = new() { Interval = 1500 };
@@ -57,14 +59,15 @@ internal sealed class MainForm : Form
     private readonly AppSettings _settings = SettingsStore.Load();
     private readonly NotifyIcon _notifyIcon = new();
     private readonly ContextMenuStrip _trayMenu = new();
-    private readonly GpuTelemetryEngine _telemetryEngine = new();
 
     private readonly Dictionary<GpuLuid, GpuAdapterItem> _adapterLookup = [];
     private readonly HashSet<int> _activeVramPids = [];
 
     private ToolStripMenuItem? _trayOverlayItem;
     private ToolStripMenuItem? _trayLockItem;
-    private PdhGpuMemoryReader? _reader;
+    private readonly Func<ISampleSource> _createSampleSource;
+    private GpuSampler? _sampler;
+    private bool _samplerStalled;
     private OverlayForm? _overlay;
     private List<ProcessItem> _allProcesses = [];
     private List<ProcessItem> _filteredProcesses = [];
@@ -89,11 +92,15 @@ internal sealed class MainForm : Form
     private bool _exitRequested;
     private string? _hotkeyWarning;
     private string? _lastLoggedReadError;
-    private int _readerRetryTicks;
-    private const int ReaderRetryIntervalTicks = 10;
 
-    public MainForm()
+    public MainForm() : this(() => new NativeSampleSource())
     {
+    }
+
+    /// <summary>Lets a test drive the window with a sample source that can be made to hang.</summary>
+    internal MainForm(Func<ISampleSource> createSampleSource)
+    {
+        _createSampleSource = createSampleSource;
         Text = "Nook";
         StartPosition = FormStartPosition.CenterScreen;
         ClientSize = new Size(620, 480);
@@ -111,7 +118,7 @@ internal sealed class MainForm : Form
         ApplyTheme();
 
         SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
-        _sampleTimer.Tick += (_, _) => SampleCounters();
+        _watchdogTimer.Tick += (_, _) => CheckSamplerHealth();
         _processRefreshTimer.Tick += (_, _) => RefreshProcesses();
         _saveTimer.Tick += (_, _) => SaveSettings();
         Shown += OnShown;
@@ -172,7 +179,7 @@ internal sealed class MainForm : Form
     private void InitializeMonitoring()
     {
         RefreshProcesses();
-        RefreshGpuList(null);
+        LoadAdapterCatalog();
         if (SettingsStore.LastLoadProblem is { } settingsProblem)
         {
             Log.Warn(settingsProblem);
@@ -184,34 +191,98 @@ internal sealed class MainForm : Form
             SetStartWithWindows(true);
         }
 
-        Log.Info(_adapterLookup.Count == 0
-            ? "No display adapters enumerated yet."
-            : $"Adapters: {string.Join("; ", _adapterLookup.Values.Select(adapter => $"{adapter.Name} ({adapter.Luid})"))}");
-        TryCreateReader();
-        _sampleTimer.Start();
+        _sampler = new GpuSampler(_createSampleSource, PostSnapshot, TimeSpan.FromSeconds(1), Log.Warn);
+        UpdateSampleRequest();
+        _sampler.Start();
+        SetStatus(_hotkeyWarning ?? "Ready. Values update once per second.");
+        _watchdogTimer.Start();
         _processRefreshTimer.Start();
     }
 
-    private void TryCreateReader()
+    /// <summary>
+    /// Enumerates DXGI adapters off the UI thread: it is a driver call like any other, and a hang here
+    /// would otherwise freeze the window before the first sample.
+    /// </summary>
+    private async void LoadAdapterCatalog()
     {
         try
         {
-            _reader = new PdhGpuMemoryReader();
-            SetStatus(_hotkeyWarning ?? "Ready. Values update once per second.");
-            if (_readerRetryTicks > 0)
+            var adapters = await Task.Run(GpuAdapterCatalog.GetAdapters);
+            if (IsDisposed)
             {
-                Log.Info("Windows GPU counters became available.");
+                return;
+            }
+
+            foreach (var adapter in adapters)
+            {
+                _adapterLookup[adapter.Luid] = adapter;
             }
         }
         catch (Exception ex)
         {
-            if (_readerRetryTicks == 0)
-            {
-                Log.Error("Windows GPU counters could not be opened; retrying every 10 seconds.", ex);
-            }
-
-            SetStatus($"Windows GPU counters unavailable: {ex.Message}");
+            Log.Error("DXGI adapter enumeration failed.", ex);
         }
+
+        _adapterCatalogLoaded = true;
+        Log.Info(_adapterLookup.Count == 0
+            ? "DXGI listed no adapters; names come from the GPU counters."
+            : $"Adapters: {string.Join("; ", _adapterLookup.Values.Select(adapter => $"{adapter.Name} ({adapter.Luid})"))}");
+        RefreshGpuList(null);
+        UpdateSampleRequest();
+    }
+
+    /// <summary>Runs on the sampler thread; everything past the hand-off runs on the UI thread.</summary>
+    private void PostSnapshot(GpuSnapshot snapshot)
+    {
+        try
+        {
+            BeginInvoke(() => ApplySnapshot(snapshot));
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ObjectDisposedException)
+        {
+            // The window is closing, or its handle is being recreated; the next sample follows within a second.
+        }
+    }
+
+    /// <summary>Tells the sampler which GPU and process the UI shows now. Cheap: an unchanged request is not republished.</summary>
+    private void UpdateSampleRequest()
+    {
+        if (_sampler is null)
+        {
+            return;
+        }
+
+        var gpu = _gpuSelector.SelectedItem as GpuAdapterItem;
+        var process = _processTracker.Current;
+        var request = new SampleRequest(gpu?.Luid, gpu?.Name, process?.Pid, process?.Name);
+        if (request != _sampler.Request)
+        {
+            _sampler.Request = request;
+        }
+    }
+
+    private void CheckSamplerHealth()
+    {
+        if (_sampler is null)
+        {
+            return;
+        }
+
+        var busy = _sampler.BusyFor;
+        if (busy < SamplerStallThreshold)
+        {
+            return;
+        }
+
+        if (!_samplerStalled)
+        {
+            _samplerStalled = true;
+            Log.Warn($"The GPU driver has not answered for {busy.TotalSeconds:0} s; readings are paused.");
+            ClearCurrentValues();
+            UpdateOverlay();
+        }
+
+        SetStatus($"The GPU driver is not responding ({busy.TotalSeconds:0} s). Readings resume when it answers.");
     }
 
     protected override void Dispose(bool disposing)
@@ -225,7 +296,9 @@ internal sealed class MainForm : Form
             }
 
             SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
-            _sampleTimer.Dispose();
+            // First, so no snapshot is posted to a window that is going away. Waits at most two seconds for a hung driver.
+            _sampler?.Dispose();
+            _watchdogTimer.Dispose();
             _processRefreshTimer.Dispose();
             _saveTimer.Dispose();
             _notifyIcon.Dispose();
@@ -233,8 +306,6 @@ internal sealed class MainForm : Form
             _overlay?.Dispose();
             _cornerMenu.Dispose();
             _toolTip.Dispose();
-            _reader?.Dispose();
-            _telemetryEngine.Dispose();
         }
 
         base.Dispose(disposing);
@@ -682,33 +753,36 @@ internal sealed class MainForm : Form
         Font = new Font("Segoe UI Semibold", 15f)
     };
 
-    private void SampleCounters()
+    private void ApplySnapshot(GpuSnapshot snapshot)
     {
-        if (_reader is null)
+        if (IsDisposed)
         {
-            // Counters can be missing early in a logon started by the Run key, so keep trying.
-            if (++_readerRetryTicks % ReaderRetryIntervalTicks == 0)
-            {
-                TryCreateReader();
-            }
-
             return;
         }
 
-        var monitored = _processTracker.Current;
-        if (monitored is not null && _processTracker.CheckAlive(pid => LookUpProcess(pid, monitored.Name)) == TrackerEvent.Exited)
+        if (_samplerStalled)
         {
-            ResetStatistics();
-            SetStatus($"{monitored.Name} exited. Nook will follow it when it starts again.");
+            _samplerStalled = false;
+            Log.Info("The GPU driver is answering again.");
+            // Otherwise the stall message stays up until something else happens to replace it.
+            SetStatus(_hotkeyWarning ?? "Ready. Values update once per second.");
         }
 
         try
         {
-            var result = _reader.Read();
-            if (!result.IsAvailable)
+            // The snapshot answers for the PID it was asked about; right after a new pick it may still describe the old one.
+            var monitored = _processTracker.Current;
+            if (monitored is not null && snapshot.Request.Pid == monitored.Pid &&
+                _processTracker.CheckAlive(_ => snapshot.Process) == TrackerEvent.Exited)
             {
-                var error = result.Error ?? "Windows GPU counters are unavailable.";
-                LogReadError(error, null);
+                ResetStatistics();
+                SetStatus($"{monitored.Name} exited. Nook will follow it when it starts again.");
+            }
+
+            if (!snapshot.IsAvailable)
+            {
+                var error = snapshot.Error ?? "Windows GPU counters are unavailable.";
+                LogReadError(error, snapshot.ErrorException);
                 SetStatus(error);
                 ClearCurrentValues();
                 UpdateOverlay();
@@ -721,14 +795,14 @@ internal sealed class MainForm : Form
                 _lastLoggedReadError = null;
             }
 
-            var processSamples = result.ProcessDedicatedBytes!;
-            var processShared = result.ProcessSharedBytes!;
+            var processSamples = snapshot.ProcessDedicatedBytes;
+            var processShared = snapshot.ProcessSharedBytes;
             _activeVramPids.Clear();
             _activeVramPids.UnionWith(processSamples.Keys);
             _activeVramPids.UnionWith(processShared.Keys);
-            RefreshGpuList(result);
+            RefreshGpuList(snapshot);
             SampleSelectedProcess(processSamples, processShared);
-            SampleSelectedGpu(result.AdapterDedicatedBytes!, result.AdapterSharedBytes!, result.AdapterUsagePercent!);
+            SampleSelectedGpu(snapshot);
             if (_processTracker.Current is { } tracked && processSamples.ContainsKey(tracked.Pid))
             {
                 SetStatus($"Monitoring {tracked.Name} (PID {tracked.Pid}).");
@@ -737,10 +811,14 @@ internal sealed class MainForm : Form
         }
         catch (Exception ex)
         {
-            LogReadError($"Windows GPU counter could not be read: {ex.Message}", ex);
+            LogReadError($"A GPU sample could not be shown: {ex.Message}", ex);
             ClearCurrentValues();
-            SetStatus($"Windows GPU counter could not be read: {ex.Message}");
+            SetStatus($"A GPU sample could not be shown: {ex.Message}");
             UpdateOverlay();
+        }
+        finally
+        {
+            UpdateSampleRequest();
         }
     }
 
@@ -793,11 +871,11 @@ internal sealed class MainForm : Form
         _lastProcessShared = _processSharedValue.Text;
     }
 
-    private void SampleSelectedGpu(
-        IReadOnlyDictionary<GpuLuid, long> dedicated,
-        IReadOnlyDictionary<GpuLuid, long> shared,
-        IReadOnlyDictionary<GpuLuid, double> usage)
+    private void SampleSelectedGpu(GpuSnapshot snapshot)
     {
+        var dedicated = snapshot.AdapterDedicatedBytes;
+        var shared = snapshot.AdapterSharedBytes;
+        var usage = snapshot.AdapterUsagePercent;
         _lastGpuName = "GPU unavailable";
         _lastGpuUsage = "—";
         _lastGpuMemory = "—";
@@ -817,7 +895,10 @@ internal sealed class MainForm : Form
         }
 
         _lastGpuName = gpu.Name;
-        var telemetry = _telemetryEngine.GetTelemetry(gpu.Luid, gpu.Name);
+        // Driver readings belong to the GPU the sample was taken for; right after a switch that is still the old one.
+        var telemetryIsCurrent = snapshot.Request.Gpu == gpu.Luid;
+        var telemetry = telemetryIsCurrent ? snapshot.Telemetry : default;
+        var missingSensorText = telemetryIsCurrent ? NoDriverSensorText : "—";
 
         if (usage.TryGetValue(gpu.Luid, out var percent))
         {
@@ -862,7 +943,7 @@ internal sealed class MainForm : Form
         }
         else
         {
-            _gpuTempValue.Text = NoDriverSensorText;
+            _gpuTempValue.Text = missingSensorText;
         }
 
         if (telemetry.CoreClockMhz.HasValue)
@@ -872,11 +953,11 @@ internal sealed class MainForm : Form
         }
         else
         {
-            _gpuClockValue.Text = NoDriverSensorText;
+            _gpuClockValue.Text = missingSensorText;
         }
     }
 
-    private void RefreshGpuList(GpuReadResult? sample)
+    private void RefreshGpuList(GpuSnapshot? sample)
     {
         if (_isRefreshingGpus)
         {
@@ -885,26 +966,14 @@ internal sealed class MainForm : Form
 
         var selected = (_gpuSelector.SelectedItem as GpuAdapterItem)?.Luid ?? _settings.SelectedGpu;
         var changed = _gpuSelector.Items.Count == 0;
-        if (!_adapterCatalogLoaded)
-        {
-            foreach (var adapter in GpuAdapterCatalog.GetAdapters())
-            {
-                _adapterLookup[adapter.Luid] = adapter;
-            }
 
-            _adapterCatalogLoaded = true;
-        }
-
-        // Only inject raw PDH counter LUIDs if DXGI hardware enumeration returned NO adapters
-        if (_adapterLookup.Count == 0 && sample.HasValue && sample.Value.AdapterDedicatedBytes is not null)
+        // Only inject raw PDH counter LUIDs once DXGI has answered and listed NO adapters.
+        // The names were resolved on the sampler thread; D3DKMT is a driver call too.
+        if (_adapterCatalogLoaded && _adapterLookup.Count == 0 && sample is not null)
         {
-            foreach (var luid in sample.Value.AdapterDedicatedBytes.Keys)
+            foreach (var (luid, name) in sample.AdapterNames)
             {
-                var name = GpuAdapterCatalog.GetAdapterName(luid);
-                if (!name.StartsWith("LUID 0x", StringComparison.OrdinalIgnoreCase))
-                {
-                    changed |= _adapterLookup.TryAdd(luid, new GpuAdapterItem(luid, name));
-                }
+                changed |= _adapterLookup.TryAdd(luid, new GpuAdapterItem(luid, name));
             }
         }
 
@@ -968,6 +1037,7 @@ internal sealed class MainForm : Form
 
         var gpu = _gpuSelector.SelectedItem as GpuAdapterItem;
         _settings.SetSelectedGpu(gpu?.Luid, gpu?.Name);
+        UpdateSampleRequest();
         RequestSave();
         _gpuUsageValue.Text = "—";
         _gpuMemoryValue.Text = "—";
@@ -998,6 +1068,7 @@ internal sealed class MainForm : Form
             // Reconcile against the unfiltered list: a monitored process hidden by the search or the
             // VRAM filter is still running, and must not be mistaken for a restart.
             var reconciled = _processTracker.Reconcile(processes, TryGetStartTime);
+            UpdateSampleRequest();
             if (reconciled is TrackerEvent.Attached or TrackerEvent.Reattached && _processTracker.Current is { } process)
             {
                 RememberProcessName(process.Name);
@@ -1092,6 +1163,7 @@ internal sealed class MainForm : Form
     private void AttachTo(ProcessItem process, bool resetStatistics)
     {
         _processTracker.Attach(process, TryGetStartTime(process.Pid));
+        UpdateSampleRequest();
         RememberProcessName(process.Name);
         if (resetStatistics)
         {
@@ -1112,6 +1184,7 @@ internal sealed class MainForm : Form
     private void ClearProcessSelection()
     {
         _processTracker.Detach(forget: true);
+        UpdateSampleRequest();
         if (_settings.SelectedProcessName is not null)
         {
             _settings.SelectedProcessName = null;
@@ -1424,7 +1497,7 @@ internal sealed class MainForm : Form
     /// Start time is read only for the process being attached to: Windows denies access for
     /// protected processes, and asking for every entry costs one exception per denial.
     /// </summary>
-    private static DateTime? TryGetStartTime(int pid)
+    internal static DateTime? TryGetStartTime(int pid)
     {
         try
         {
@@ -1444,7 +1517,7 @@ internal sealed class MainForm : Form
     }
 
     /// <summary>Returns the live name and start time of a PID, or null once no process holds it.</summary>
-    private static (string Name, DateTime? StartTime)? LookUpProcess(int pid, string expectedName)
+    internal static (string Name, DateTime? StartTime)? LookUpProcess(int pid, string expectedName)
     {
         try
         {
