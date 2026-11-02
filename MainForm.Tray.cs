@@ -41,6 +41,22 @@ internal sealed partial class MainForm
         }
     }
 
+    /// <summary>
+    /// Called on a thread pool thread when Nook is launched again. Running it twice would only start
+    /// and exit, so the existing window is brought forward instead, wherever it was hidden.
+    /// </summary>
+    internal void ShowForSecondLaunch()
+    {
+        try
+        {
+            BeginInvoke(RestoreFromTray);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or ObjectDisposedException)
+        {
+            // The window has no handle yet or is closing; there is nothing to bring forward.
+        }
+    }
+
     private void RestoreFromTray()
     {
         Show();
