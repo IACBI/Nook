@@ -326,18 +326,44 @@ internal sealed class OverlayForm : Form
 
     public void RestoreLocation(Point location)
     {
-        var bounds = new Rectangle(location, Size);
-        var screen = Screen.AllScreens.FirstOrDefault(candidate => candidate.WorkingArea.IntersectsWith(bounds)) ?? Screen.PrimaryScreen;
-        if (screen is null)
+        var target = PlaceOnScreen(
+            new Rectangle(location, Size),
+            Screen.AllScreens.Select(screen => screen.WorkingArea).ToList(),
+            Screen.PrimaryScreen?.WorkingArea);
+        if (target is null)
         {
             return;
         }
 
-        var area = screen.WorkingArea;
-        Location = new Point(
-            Math.Clamp(location.X, area.Left, Math.Max(area.Left, area.Right - Width)),
-            Math.Clamp(location.Y, area.Top, Math.Max(area.Top, area.Bottom - Height)));
+        Location = target.Value;
         RenderOverlay(force: true);
+    }
+
+    /// <summary>
+    /// Where a window with <paramref name="bounds"/> belongs: on the first working area it overlaps,
+    /// or on the primary one when it overlaps none (its monitor was unplugged), pulled in far enough
+    /// to be fully visible. Null when there is no screen at all.
+    /// </summary>
+    internal static Point? PlaceOnScreen(Rectangle bounds, IReadOnlyList<Rectangle> workingAreas, Rectangle? primaryArea)
+    {
+        Rectangle? overlapping = null;
+        foreach (var candidate in workingAreas)
+        {
+            if (candidate.IntersectsWith(bounds))
+            {
+                overlapping = candidate;
+                break;
+            }
+        }
+
+        if ((overlapping ?? primaryArea) is not { } area)
+        {
+            return null;
+        }
+
+        return new Point(
+            Math.Clamp(bounds.X, area.Left, Math.Max(area.Left, area.Right - bounds.Width)),
+            Math.Clamp(bounds.Y, area.Top, Math.Max(area.Top, area.Bottom - bounds.Height)));
     }
 
     protected override void WndProc(ref Message m)
