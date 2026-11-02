@@ -98,6 +98,18 @@ internal sealed partial class MainForm
         }
     }
 
+    /// <summary>
+    /// An unplugged monitor or a resolution change can leave the overlay off every screen, where a
+    /// click-through window cannot be found or dragged back, so it is moved onto one that remains.
+    /// </summary>
+    private void OnDisplaySettingsChanged(object? sender, EventArgs e)
+    {
+        if (!IsDisposed && IsHandleCreated)
+        {
+            BeginInvoke(() => _overlay?.RestoreLocation(_overlay.Location));
+        }
+    }
+
     private void ShowCornerMenu(Control anchor)
     {
         _cornerMenu.Show(anchor, new Point(0, anchor.Height));
