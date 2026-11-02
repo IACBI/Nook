@@ -9,8 +9,14 @@ internal sealed class NativeSampleSource : ISampleSource
 {
     // Counters can be missing early in a logon started by the Run key, so keep trying.
     private const int ReaderRetryIntervalSamples = 10;
+    private const int TelemetryEmptySamplesBeforeReopen = 5;
+    private const int TelemetryMinSamplesBetweenReopens = 60;
+    private const int TelemetryMaxSamplesBetweenReopens = 30 * 60;
 
-    private readonly GpuTelemetryEngine _telemetry = new();
+    private readonly TelemetryRecovery _telemetryRecovery = new(
+        TelemetryEmptySamplesBeforeReopen, TelemetryMinSamplesBetweenReopens, TelemetryMaxSamplesBetweenReopens);
+    private GpuTelemetryEngine _telemetry = new();
+    private bool _telemetryLost;
     private readonly Dictionary<GpuLuid, string?> _nameLookups = [];
     private readonly Dictionary<GpuLuid, string> _adapterNames = [];
     private PdhGpuMemoryReader? _reader;
@@ -38,8 +44,33 @@ internal sealed class NativeSampleSource : ISampleSource
         }
 
         ResolveAdapterNames(read.AdapterDedicatedBytes!.Keys);
-        var telemetry = request.Gpu is { } luid ? _telemetry.GetTelemetry(luid, request.GpuName) : default;
+        var telemetry = request.Gpu is { } luid ? ReadTelemetry(luid, request.GpuName) : default;
         return GpuSnapshot.FromRead(request, read, _adapterNames, telemetry, process);
+    }
+
+    private GpuTelemetrySample ReadTelemetry(GpuLuid luid, string? adapterName)
+    {
+        var sample = _telemetry.GetTelemetry(luid, adapterName);
+        if (_telemetryRecovery.ShouldReopen(luid, sample))
+        {
+            if (!_telemetryLost)
+            {
+                _telemetryLost = true;
+                Log.Warn("Driver temperature and clock readings stopped; reopening the vendor libraries, then retrying at growing intervals of up to 30 minutes.");
+            }
+
+            _telemetry.Dispose();
+            _telemetry = new GpuTelemetryEngine();
+            sample = _telemetry.GetTelemetry(luid, adapterName);
+        }
+
+        if (_telemetryLost && TelemetryRecovery.HasReading(sample))
+        {
+            _telemetryLost = false;
+            Log.Info("Driver temperature and clock readings are back.");
+        }
+
+        return sample;
     }
 
     public void Dispose()
