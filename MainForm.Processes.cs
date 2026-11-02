@@ -156,9 +156,11 @@ internal sealed partial class MainForm
     private void ResetStatistics()
     {
         _statistics.Reset();
+        _sharedStatistics.Reset();
         _currentValue.Text = "—";
         _peakValue.Text = "—";
         _averageValue.Text = "—";
+        _processSharedPeakValue.Text = "—";
     }
 
 }
