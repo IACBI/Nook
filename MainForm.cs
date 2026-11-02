@@ -108,6 +108,7 @@ internal sealed partial class MainForm : Form
         ApplyTheme();
 
         SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
+        SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
         _watchdogTimer.Tick += (_, _) => CheckSamplerHealth();
         _processRefreshTimer.Tick += (_, _) => RefreshProcesses();
         _saveTimer.Tick += (_, _) => SaveSettings();
@@ -189,6 +190,7 @@ internal sealed partial class MainForm : Form
             }
 
             SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
+            SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
             // First, so no snapshot is posted to a window that is going away. Waits at most two seconds for a hung driver.
             _sampler?.Dispose();
             _watchdogTimer.Dispose();
