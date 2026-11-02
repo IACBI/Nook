@@ -99,4 +99,15 @@ public class TelemetryMatchingTests
     {
         Assert.Equal(expected, GpuTelemetryEngine.ParsePciFunction(busId));
     }
+
+    [Theory]
+    [InlineData(117249, 1172u)]
+    [InlineData(54228, 542u)]
+    [InlineData(250050, 2501u)]
+    [InlineData(0, 0u)]
+    [InlineData(-5, 0u)]
+    public void Adl_clocks_are_converted_from_10_khz_units(int raw, uint expectedMhz)
+    {
+        Assert.Equal(expectedMhz, GpuTelemetryEngine.AdlClockToMhz(raw));
+    }
 }
