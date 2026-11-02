@@ -90,6 +90,7 @@ internal sealed class GpuSampler : IDisposable
     private readonly Thread _thread;
     private SampleRequest _request = SampleRequest.None;
     private long _busySince;
+    private volatile bool _opening = true;
     private long _lastSlowWarning;
 
     /// <param name="createSource">Runs on the sampler thread, so every native handle the source opens belongs to it.</param>
@@ -122,6 +123,12 @@ internal sealed class GpuSampler : IDisposable
             return since == 0 ? TimeSpan.Zero : Stopwatch.GetElapsedTime(since);
         }
     }
+
+    /// <summary>
+    /// True until the sample source has been created. Opening NVML wakes a parked laptop GPU and can
+    /// take seconds, which is a slow start rather than a hung driver.
+    /// </summary>
+    public bool IsOpening => _opening;
 
     public void Start() => _thread.Start();
 
@@ -163,6 +170,7 @@ internal sealed class GpuSampler : IDisposable
             finally
             {
                 Interlocked.Exchange(ref _busySince, 0);
+                _opening = false;
             }
 
             while (!_stop.IsCancellationRequested)

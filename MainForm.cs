@@ -43,6 +43,7 @@ internal sealed partial class MainForm : Form
     // Sampling runs on GpuSampler's thread; this timer only watches it, so it keeps ticking when a driver hangs.
     private readonly System.Windows.Forms.Timer _watchdogTimer = new() { Interval = 1000 };
     private static readonly TimeSpan SamplerStallThreshold = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan SamplerOpeningStallThreshold = TimeSpan.FromSeconds(15);
     private readonly System.Windows.Forms.Timer _processRefreshTimer = new() { Interval = 10000 };
     // Debounced so dragging the overlay or toggling options writes the file once, not per event.
     private readonly System.Windows.Forms.Timer _saveTimer = new() { Interval = 1500 };

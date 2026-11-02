@@ -72,7 +72,7 @@ internal sealed partial class MainForm
         }
 
         var busy = _sampler.BusyFor;
-        if (busy < SamplerStallThreshold)
+        if (busy < (_sampler.IsOpening ? SamplerOpeningStallThreshold : SamplerStallThreshold))
         {
             return;
         }
