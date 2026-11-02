@@ -91,6 +91,36 @@ public class GpuSamplerTests
     }
 
     [Fact]
+    public void A_slow_open_is_busy_but_reported_as_opening_until_the_source_exists()
+    {
+        var published = new BlockingCollection<GpuSnapshot>();
+        using var source = new FakeSource();
+        using var openGate = new ManualResetEventSlim();
+        using var opening = new ManualResetEventSlim();
+        using var sampler = new GpuSampler(
+            () =>
+            {
+                opening.Set();
+                openGate.Wait();
+                return source;
+            },
+            published.Add,
+            Interval);
+
+        Assert.True(sampler.IsOpening);
+        sampler.Start();
+        Assert.True(opening.Wait(Patience));
+        Thread.Sleep(100);
+
+        Assert.True(sampler.IsOpening);
+        Assert.True(sampler.BusyFor >= TimeSpan.FromMilliseconds(50));
+
+        openGate.Set();
+        Assert.True(published.TryTake(out _, Patience));
+        Assert.False(sampler.IsOpening);
+    }
+
+    [Fact]
     public void Busy_time_is_zero_between_samples()
     {
         var published = new BlockingCollection<GpuSnapshot>();
