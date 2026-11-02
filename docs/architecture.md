@@ -11,7 +11,7 @@ Written for anyone about to change the native code. English only; see the [READM
 | `MainForm.Sampling.cs` | Applying snapshots, the watchdog, the GPU picker |
 | `MainForm.Processes.cs` | Process list, filters and the monitored selection |
 | `MainForm.Overlay.cs`, `MainForm.Tray.cs` | Overlay and tray control |
-| `GpuSampler.cs`, `NativeSampleSource.cs` | The background sampling thread and what it reads |
+| `GpuSampler.cs`, `NativeSampleSource.cs`, `TelemetryRecovery.cs` | The background sampling thread, what it reads, and when the vendor libraries are reopened |
 | `PdhGpuMemoryReader.cs`, `GpuTelemetryEngine.cs`, `GpuAdapterCatalog.cs` | PDH, NVML/ADL and DXGI/D3DKMT interop |
 | `ProcessTracker.cs`, `ProcessCatalog.cs` | Which process is monitored, and reading processes |
 | `AppTheme.cs`, `DarkMenuRenderer.cs`, `OverlayForm.cs` | Look and drawing |
@@ -68,7 +68,9 @@ Software adapters (the Microsoft Basic Render Driver) are filtered out by `DXGI_
 
 Neither `nvml.dll` nor `atiadlxx.dll` ships with Windows, so both are loaded with `NativeLibrary.TryLoad` and every entry point is treated as optional. ADL writes the full `ADLODNPerformanceStatus` (eighteen ints) into the caller's buffer; the managed mirror must match it exactly, and ADL is not called at all if `Marshal.SizeOf` disagrees with the SDK size.
 
-Both libraries load independently, so a machine with an NVIDIA and an AMD adapter gets readings for each. An adapter is matched to its vendor device by PCI bus, device and function: `D3DKMTQueryAdapterInfo(KMTQAITYPE_ADAPTERADDRESS)` gives the location for a LUID, NVML reports it through `nvmlDeviceGetPciInfo_v3`, and ADL through `ADL2_Adapter_AdapterInfo_Get`, which lists one entry per display output, so entries are collapsed per location. The location is resolved once per LUID and cached, because the lookup would otherwise run every second on the UI thread. Only when Windows reports no location does the name decide, and then only if it singles out exactly one device. There is no "first device" fallback: when nothing matches — an Intel iGPU, say — the sample comes back empty and the overlay drops the temperature and clock rows rather than showing another card's readings. `nvmlPciInfo_t` (68 bytes), `AdapterInfo` (1572 bytes) and `D3DKMT_ADAPTERADDRESS` (12 bytes) are size-checked like the ADL performance status, and the query that needs one is skipped if it disagrees.
+Both libraries load independently, so a machine with an NVIDIA and an AMD adapter gets readings for each. An adapter is matched to its vendor device by PCI bus, device and function: `D3DKMTQueryAdapterInfo(KMTQAITYPE_ADAPTERADDRESS)` gives the location for a LUID, NVML reports it through `nvmlDeviceGetPciInfo_v3`, and ADL through `ADL2_Adapter_AdapterInfo_Get`, which lists one entry per display output, so entries are collapsed per location. The location is resolved once per LUID and cached, because the lookup would otherwise run every second on the UI thread. Only when Windows reports no location does the name decide, and then only if it singles out exactly one device. There is no "first device" fallback: when nothing matches — an Intel iGPU, say — the sample comes back empty and the overlay drops the temperature and clock rows rather than showing another card's readings.
+
+A driver reset (TDR) or a driver update invalidates NVML device handles and the ADL context, and they do not come back on their own. `TelemetryRecovery` watches the samples: once an adapter that has produced readings returns five empty samples in a row, `NativeSampleSource` disposes the engine and opens a new one. Opening NVML can itself stall for seconds while a parked laptop GPU wakes, so a GPU that stays silent is retried after one minute, then two, four and so on up to thirty, and the interval returns to one minute once readings come back. An adapter that never answered, such as an Intel iGPU, never triggers this. The first reopen and the recovery are each logged once. `nvmlPciInfo_t` (68 bytes), `AdapterInfo` (1572 bytes) and `D3DKMT_ADAPTERADDRESS` (12 bytes) are size-checked like the ADL performance status, and the query that needs one is skipped if it disagrees.
 
 ## Process tracking
 
@@ -80,6 +82,12 @@ Both libraries load independently, so a machine with an NVIDIA and an AMD adapte
 
 Rows are measured and laid out from the row list, so adding a metric is a matter of adding a row; the window resizes itself to fit. Rendering is skipped when neither the text nor the lock state changed, which is the common case between samples.
 
+The saved position is clamped onto a visible screen at startup, and again on `SystemEvents.DisplaySettingsChanged`: a click-through window left on an unplugged monitor could not otherwise be found or dragged back.
+
+## Single instance
+
+`Program` holds the `Local\Nook` mutex for the life of the process. A second launch does not start a second window; it signals the `Local\Nook.Show` event and exits, and the first instance brings its window forward from the tray. Every instance opens the event before checking the mutex, so the signal cannot be lost to a race, and the second instance calls `AllowSetForegroundWindow` first, because only the process the user just launched holds the right to take the foreground.
+
 ## Settings and diagnostics
 
 `SettingsStore` writes through `settings.json.tmp` and a rename, so a crash mid-write leaves the previous file intact. It reads each property on its own: a field with the wrong type or an invalid hotkey falls back to its default without discarding the rest, and a file that is not JSON at all is copied to `settings.bad.json` before defaults are used. `MainForm` saves 1.5 seconds after the last change rather than only on exit. The selected GPU is stored as a LUID and a name, because a LUID is only unique until the next restart.
@@ -88,7 +96,7 @@ Rows are measured and laid out from the row list, so adding a metric is a matter
 
 ## Tests
 
-`tests/Nook.Tests` covers the code whose failures are silent rather than loud: the counter instance-name parsing and engine-load aggregation, the byte and hotkey formatting, the GPU name shortening, saved-GPU resolution, vendor-device matching, process tracking, the sampler thread (with a source that can be made to hang), settings load and save, the log, and the hand-declared native layouts. A mistake in the LUID parser does not throw — it attributes memory to the wrong adapter — so the instance-name strings Windows actually produces are pinned as test data.
+`tests/Nook.Tests` covers the code whose failures are silent rather than loud: the counter instance-name parsing and engine-load aggregation, the byte and hotkey formatting, the GPU name shortening, saved-GPU resolution, vendor-device matching, process tracking, when the vendor libraries are reopened, the sampler thread (with a source that can be made to hang), settings load and save, the log, and the hand-declared native layouts. A mistake in the LUID parser does not throw — it attributes memory to the wrong adapter — so the instance-name strings Windows actually produces are pinned as test data.
 
 ```powershell
 dotnet test tests/Nook.Tests
