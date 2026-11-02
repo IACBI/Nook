@@ -175,6 +175,13 @@ internal sealed class GpuTelemetryEngine : IDisposable
         return isAmd ? adapters[0].Index : -1;
     }
 
+    /// <summary>
+    /// Converts an OverdriveN clock to MHz. ADL reports clocks in 10 kHz units, as its
+    /// <c>ADLClockInfo</c> documents and its OverdriveN clock ranges use; read as MHz, a 1172 MHz
+    /// core would show as 117249 MHz.
+    /// </summary>
+    internal static uint AdlClockToMhz(int tenKilohertz) => (uint)Math.Round(Math.Max(tenKilohertz, 0) / 100.0, MidpointRounding.AwayFromZero);
+
     /// <summary>Reads the function number from an NVML bus id such as <c>00000000:01:00.1</c>. Returns 0 when it cannot be read.</summary>
     internal static uint ParsePciFunction(string busId)
     {
@@ -385,7 +392,7 @@ internal sealed class GpuTelemetryEngine : IDisposable
 
             if (NvmlNative.ADL2_OverdriveN_PerformanceStatus_Get(_adlContext, adapterIndex, out var status) == 0 && status.iCoreClock >= 0)
             {
-                clock = (uint)status.iCoreClock;
+                clock = AdlClockToMhz(status.iCoreClock);
                 usage = status.iGPUActivityPercent;
             }
         }
