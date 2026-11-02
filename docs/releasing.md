@@ -28,7 +28,10 @@ Every check that can fail cheaply runs before anything is built or created:
 
 Then it restores, builds with warnings as errors, runs the tests, and publishes a single-file `win-x64` build. Then it:
 
-5. Checks that the file version of `Nook.exe` matches the version.
+5. Checks that the file version of `Nook.exe` matches the version, and uploads `Nook.exe` and `notes.md` as an artifact.
+
+Everything up to here runs in the `build` job, which runs the repository's code and therefore only has a read-only token. The rest runs in the `publish` job, which holds the write, attestation and OIDC permissions and never checks out or runs the repository's code. It downloads the artifact, checks its SHA-256 against the one the `build` job reported, and then:
+
 6. Creates a build provenance attestation for `Nook.exe`.
 7. Creates a **draft** release with `Nook.exe` and the notes.
 8. Checks that the draft's asset digest equals the SHA-256 of the built file. If it does not, the run stops and the draft stays unpublished.
@@ -51,7 +54,7 @@ Run the workflow manually from the Actions tab, or:
 gh workflow run release.yml
 ```
 
-A dry run builds, tests and checks the version, but creates nothing. Only a pushed tag publishes: a manual run started on a tag (`--ref vX.Y.Z`) is still a dry run. It uploads `Nook.exe` and `notes.md` as the `Nook-release-dry-run` artifact for inspection. It also runs on pull requests that change the workflow or `docs/releases/`.
+A dry run builds, tests and checks the version, and the `publish` job downloads and checks the artifact, but nothing is created. Only a pushed tag publishes: a manual run started on a tag (`--ref vX.Y.Z`) is still a dry run. It uploads `Nook.exe` and `notes.md` as the `Nook-release-dry-run` artifact for inspection. It also runs on pull requests that change the workflow or `docs/releases/`.
 
 ## Verifying a download
 
