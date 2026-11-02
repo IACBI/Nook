@@ -10,6 +10,11 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same pull request makes the older run pointless; main keeps every run.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build:
     runs-on: windows-latest
@@ -36,7 +41,7 @@ jobs:
         run: dotnet build Nook.csproj -c Release -p:TreatWarningsAsErrors=true --no-restore
 
       - name: Test
-        run: dotnet test tests/Nook.Tests -c Release --no-restore
+        run: dotnet test tests/Nook.Tests -c Release --no-restore -p:TreatWarningsAsErrors=true
 
       - name: Publish
         run: dotnet publish Nook.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o release
