@@ -10,10 +10,18 @@ internal static class Program
     [STAThread]
     private static void Main()
     {
+        // Opened before the mutex by every instance, so a second launch can always reach the first:
+        // the event outlives the second process because the first holds a handle to it as well.
+        using var showRequest = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\Nook.Show");
+
         // Two instances would fight over the same global hotkeys and stack two tray icons.
         using var singleInstance = new Mutex(true, @"Local\Nook", out var isFirstInstance);
         if (!isFirstInstance)
         {
+            // The launching process holds the foreground right; without passing it on, Windows only
+            // flashes the existing window's taskbar button instead of bringing it forward.
+            AllowSetForegroundWindow(AsfwAny);
+            showRequest.Set();
             return;
         }
 
@@ -31,9 +39,26 @@ internal static class Program
 
         ApplicationConfiguration.Initialize();
         Log.Info($"Nook {GetVersion()} starting on {Environment.OSVersion}, {RuntimeInformation.FrameworkDescription}");
-        Application.Run(new MainForm());
+        var window = new MainForm();
+        var showRegistration = ThreadPool.RegisterWaitForSingleObject(
+            showRequest, (_, _) => window.ShowForSecondLaunch(), null, Timeout.Infinite, executeOnlyOnce: false);
+        try
+        {
+            Application.Run(window);
+        }
+        finally
+        {
+            showRegistration.Unregister(null);
+        }
+
         Log.Info("Nook stopped");
     }
+
+    private const int AsfwAny = -1;
+
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [DllImport("user32.dll", ExactSpelling = true)]
+    private static extern bool AllowSetForegroundWindow(int processId);
 
     private static void OnThreadException(object sender, ThreadExceptionEventArgs e)
     {
