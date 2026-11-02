@@ -196,10 +196,12 @@ internal sealed partial class MainForm
         }
 
         _statistics.Add(dedicatedBytes);
+        _sharedStatistics.Add(sharedBytes);
         _currentValue.Text = DisplayFormat.Bytes(dedicatedBytes);
         _peakValue.Text = DisplayFormat.Bytes(_statistics.PeakBytes);
         _averageValue.Text = DisplayFormat.Bytes(_statistics.AverageBytes);
         _processSharedValue.Text = DisplayFormat.Bytes(sharedBytes);
+        _processSharedPeakValue.Text = DisplayFormat.Bytes(_sharedStatistics.PeakBytes);
         _lastProcessMemory = _currentValue.Text;
         _lastProcessShared = _processSharedValue.Text;
     }

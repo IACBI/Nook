@@ -166,7 +166,8 @@ internal sealed partial class MainForm
             ("Dedicated (current)", _currentValue),
             ("Dedicated (peak)", _peakValue),
             ("Dedicated (average)", _averageValue),
-            ("Shared (current)", _processSharedValue)
+            ("Shared (current)", _processSharedValue),
+            ("Shared (peak)", _processSharedPeakValue)
         });
 
         layout.Controls.Add(filterRow, 0, 0);

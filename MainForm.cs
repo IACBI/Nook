@@ -29,6 +29,7 @@ internal sealed partial class MainForm : Form
     private readonly Label _peakValue = CreateValueLabel();
     private readonly Label _averageValue = CreateValueLabel();
     private readonly Label _processSharedValue = CreateValueLabel();
+    private readonly Label _processSharedPeakValue = CreateValueLabel();
     private readonly Label _gpuUsageValue = CreateValueLabel();
     private readonly Label _gpuMemoryValue = CreateValueLabel();
     private readonly Label _gpuSharedValue = CreateValueLabel();
@@ -65,6 +66,8 @@ internal sealed partial class MainForm : Form
     private readonly ProcessTracker _processTracker = new();
     private bool _isLoadingProcesses;
     private readonly MemoryStatistics _statistics = new();
+    // Integrated GPUs have no dedicated pool, so without this their peak would always read 0 MB.
+    private readonly MemoryStatistics _sharedStatistics = new();
     private string _currentView = "Process";
     private bool _isRefreshingProcesses;
     private bool _isRefreshingGpus;
