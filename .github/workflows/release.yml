@@ -129,7 +129,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          dotnet test tests/Nook.Tests -c Release --no-restore
+          dotnet test tests/Nook.Tests -c Release "-p:TreatWarningsAsErrors=true" --no-restore
           if ($LASTEXITCODE -ne 0) { throw "dotnet test failed with exit code $LASTEXITCODE" }
 
       - name: Publish
