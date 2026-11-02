@@ -11,19 +11,24 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  release:
+  # Runs the repository's code (restore, build, tests), so it only ever gets a read-only token.
+  build:
     runs-on: windows-latest
     timeout-minutes: 30
 
-    concurrency:
-      group: release-${{ github.ref }}
-      cancel-in-progress: false
-
     permissions:
-      contents: write
-      id-token: write
-      attestations: write
+      contents: read
+
+    outputs:
+      is-release: ${{ steps.mode.outputs.is-release }}
+      tag: ${{ steps.mode.outputs.tag }}
+      version: ${{ steps.mode.outputs.version }}
+      sha256: ${{ steps.notes.outputs.sha256 }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -36,6 +41,7 @@ jobs:
           global-json-file: global.json
 
       - name: Resolve mode
+        id: mode
         shell: pwsh
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -65,6 +71,11 @@ jobs:
             "TAG=$tag",
             "VERSION=$version",
             "PROJECT_VERSION=$projectVersion"
+          )
+          Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value @(
+            "is-release=$isRelease",
+            "tag=$tag",
+            "version=$version"
           )
 
       # Nothing is built or created until every check here has passed. Releases and
@@ -149,12 +160,8 @@ jobs:
             throw "release/Nook.exe FileVersion '$fileVersion' does not match $($env:VERSION)"
           }
 
-      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        if: env.IS_RELEASE == 'true'
-        with:
-          subject-path: release/Nook.exe
-
       - name: Compose notes
+        id: notes
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -168,10 +175,60 @@ jobs:
           $tick = [char]96
           $text = "$body`n`nSHA-256 $tick$hash$tick`n"
           [System.IO.File]::WriteAllText((Join-Path (Get-Location) 'release/notes.md'), $text, [System.Text.UTF8Encoding]::new($false))
+          Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "sha256=$hash"
           if ($env:IS_RELEASE -ne 'true') {
             Write-Output '--- release/notes.md ---'
             Write-Output $text
           }
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ env.IS_RELEASE == 'true' && 'Nook-release' || 'Nook-release-dry-run' }}
+          path: |
+            release/Nook.exe
+            release/notes.md
+          if-no-files-found: error
+
+  # Holds the write token, so it never checks out or runs the repository's code: it only
+  # handles the file the build job produced. In a dry run it stops after checking that file.
+  publish:
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+
+    env:
+      IS_RELEASE: ${{ needs.build.outputs.is-release }}
+      TAG: ${{ needs.build.outputs.tag }}
+      VERSION: ${{ needs.build.outputs.version }}
+      BUILT_SHA256: ${{ needs.build.outputs.sha256 }}
+
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.build.outputs.is-release == 'true' && 'Nook-release' || 'Nook-release-dry-run' }}
+          path: release
+
+      - name: Check artifact
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $env:BUILT_SHA256) { throw 'The build job reported no SHA-256' }
+          foreach ($file in 'release/Nook.exe', 'release/notes.md') {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "$file is missing from the artifact" }
+          }
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath release/Nook.exe).Hash
+          if ($hash -ne $env:BUILT_SHA256) { throw "Downloaded Nook.exe SHA-256 $hash does not match the built file $($env:BUILT_SHA256)" }
+          if (-not (Get-Content -Raw -LiteralPath release/notes.md).Contains($env:BUILT_SHA256)) { throw 'notes.md does not carry the SHA-256 of Nook.exe' }
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        if: env.IS_RELEASE == 'true' && github.event_name == 'push'
+        with:
+          subject-path: release/Nook.exe
 
       - name: Create draft release
         if: env.IS_RELEASE == 'true' && github.event_name == 'push'
@@ -187,7 +244,7 @@ jobs:
       # Stops before publishing. A mismatched draft stays unpublished so a maintainer
       # can inspect it; deleting it is their call.
       - name: Check draft asset digest
-        if: env.IS_RELEASE == 'true'
+        if: env.IS_RELEASE == 'true' && github.event_name == 'push'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -215,7 +272,7 @@ jobs:
       # The release is public once the previous step has run, so this cannot prevent a
       # bad release. It proves the published bytes are the attested build.
       - name: Verify published download
-        if: env.IS_RELEASE == 'true'
+        if: env.IS_RELEASE == 'true' && github.event_name == 'push'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -232,12 +289,3 @@ jobs:
           if ($downloadedHash -ne $builtHash) { throw "Published Nook.exe SHA-256 $downloadedHash does not match the built file $builtHash" }
           gh attestation verify $downloaded -R $env:REPO
           if ($LASTEXITCODE -ne 0) { throw "gh attestation verify failed with exit code $LASTEXITCODE" }
-
-      - name: Upload dry-run files
-        if: env.IS_RELEASE != 'true'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: Nook-release-dry-run
-          path: |
-            release/Nook.exe
-            release/notes.md
