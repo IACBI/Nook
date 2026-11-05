@@ -82,7 +82,7 @@ A driver reset (TDR) or a driver update invalidates NVML device handles and the 
 
 Rows are measured and laid out from the row list, so adding a metric is a matter of adding a row; the window resizes itself to fit. Rendering is skipped when neither the text nor the lock state changed, which is the common case between samples.
 
-The saved position is clamped onto a visible screen at startup, and again on `SystemEvents.DisplaySettingsChanged`: a click-through window left on an unplugged monitor could not otherwise be found or dragged back.
+The saved position is clamped onto a visible screen at startup, and again on `SystemEvents.DisplaySettingsChanged`: a click-through window left on an unplugged monitor could not otherwise be found or dragged back. The same clamp runs whenever the overlay resizes itself, because it grows to the right and a longer reading would otherwise push it past the screen edge.
 
 ## Single instance
 

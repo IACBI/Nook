@@ -177,6 +177,13 @@ internal sealed class OverlayForm : Form
         if (Width != targetWidth || Height != targetHeight)
         {
             Size = new Size(targetWidth, targetHeight);
+            // It grows to the right and down; near a screen edge that would push it partly off screen,
+            // where a locked, click-through overlay cannot be dragged back.
+            if (PlaceOnScreen(Bounds, Screen.AllScreens.Select(screen => screen.WorkingArea).ToList(), Screen.PrimaryScreen?.WorkingArea) is { } onScreen
+                && onScreen != Location)
+            {
+                Location = onScreen;
+            }
         }
 
         if (_renderBitmap is null || _renderBitmap.Width != Width || _renderBitmap.Height != Height)
@@ -227,11 +234,12 @@ internal sealed class OverlayForm : Form
         }
 
         const string badgeText = "MOVE";
-        var badgeSize = TextRenderer.MeasureText(badgeText, _badgeFont);
-        var badgeRect = new Rectangle(Width - badgeSize.Width - 10, 4, badgeSize.Width + 4, badgeSize.Height + 1);
-        using (var badgeBrush = new SolidBrush(Color.FromArgb(0, 140, 230)))
+        var badgeSize = TextRenderer.MeasureText(badgeText, _badgeFont, Size.Empty, TextFormatFlags.NoPadding);
+        var badgeRect = new Rectangle(Width - badgeSize.Width - 20, PaddingY + 2, badgeSize.Width + 10, badgeSize.Height + 4);
+        using (var badgePath = GraphicsPaths.RoundedRectangle(badgeRect, badgeRect.Height / 2))
+        using (var badgeBrush = new SolidBrush(Color.FromArgb(0, 102, 204)))
         {
-            g.FillRectangle(badgeBrush, badgeRect);
+            g.FillPath(badgeBrush, badgePath);
         }
 
         TextRenderer.DrawText(g, badgeText, _badgeFont, badgeRect, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
