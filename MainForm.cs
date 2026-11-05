@@ -95,12 +95,17 @@ internal sealed partial class MainForm : Form
     internal MainForm(Func<ISampleSource> createSampleSource)
     {
         _createSampleSource = createSampleSource;
+        // Suspended like designer code: auto-scaling to the display DPI runs when layout resumes.
+        SuspendLayout();
         Text = "Nook";
         StartPosition = FormStartPosition.CenterScreen;
+        // The sizes below are written for 96 DPI. Without this baseline AutoScaleMode scales nothing:
+        // fonts still grow with the display scale, but fixed row heights and buttons do not, and clip them.
+        AutoScaleDimensions = new SizeF(96f, 96f);
+        AutoScaleMode = AutoScaleMode.Dpi;
         ClientSize = new Size(620, 480);
         MinimumSize = new Size(540, 430);
         FormBorderStyle = FormBorderStyle.Sizable;
-        AutoScaleMode = AutoScaleMode.Dpi;
         Font = new Font("Segoe UI", 9f);
 
         _cornerMenu.Renderer = new DarkMenuRenderer();
@@ -110,6 +115,7 @@ internal sealed partial class MainForm : Form
         BuildLayout();
         InitializeTrayIcon();
         ApplyTheme();
+        ResumeLayout(performLayout: true);
 
         SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
         SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
