@@ -30,7 +30,7 @@ internal sealed class DarkMenuRenderer : ToolStripProfessionalRenderer
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
             var rect = new Rectangle(3, 1, e.Item.Width - 6, e.Item.Height - 2);
             using var path = GraphicsPaths.RoundedRectangle(rect, 4);
-            using var brush = new SolidBrush(Color.FromArgb(40, 0, 225, 255));
+            using var brush = new SolidBrush(Color.FromArgb(48, 0, 180, 240));
             e.Graphics.FillPath(brush, path);
         }
     }
@@ -39,7 +39,7 @@ internal sealed class DarkMenuRenderer : ToolStripProfessionalRenderer
     {
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
         var checkRect = e.ImageRectangle;
-        using var checkPen = new Pen(Color.FromArgb(0, 225, 255), 2f)
+        using var checkPen = new Pen(Color.FromArgb(0, 180, 240), 2f)
         {
             StartCap = LineCap.Round,
             EndCap = LineCap.Round,

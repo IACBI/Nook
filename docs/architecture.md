@@ -14,7 +14,7 @@ Written for anyone about to change the native code. English only; see the [READM
 | `GpuSampler.cs`, `NativeSampleSource.cs`, `TelemetryRecovery.cs` | The background sampling thread, what it reads, and when the vendor libraries are reopened |
 | `PdhGpuMemoryReader.cs`, `GpuTelemetryEngine.cs`, `GpuAdapterCatalog.cs` | PDH, NVML/ADL and DXGI/D3DKMT interop |
 | `ProcessTracker.cs`, `ProcessCatalog.cs` | Which process is monitored, and reading processes |
-| `AppTheme.cs`, `DarkMenuRenderer.cs`, `OverlayForm.cs` | Look and drawing |
+| `AppTheme.cs`, `ThemedButton.cs`, `DarkMenuRenderer.cs`, `OverlayForm.cs` | Look and drawing |
 | `AppSettings.cs`, `Log.cs`, `StartupEntry.cs`, `GlobalHotkeys.cs` | Persistence, diagnostics and Windows integration |
 
 `MainForm` is split into partial files by concern; anything that does not need the window lives in a type of its own so it can be tested without one.
