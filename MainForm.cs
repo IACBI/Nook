@@ -12,9 +12,9 @@ internal sealed partial class MainForm : Form
     private const int HotKeyToggleOverlay = 1;
     private const int HotKeyToggleLock = 2;
 
-    private readonly Button _navProcessBtn = CreateNavButton("Process");
-    private readonly Button _navGpuBtn = CreateNavButton("GPU");
-    private readonly Button _navSettingsBtn = CreateNavButton("Settings");
+    private readonly ThemedButton _navProcessBtn = CreateNavButton("Process");
+    private readonly ThemedButton _navGpuBtn = CreateNavButton("GPU");
+    private readonly ThemedButton _navSettingsBtn = CreateNavButton("Settings");
     private readonly Panel _contentContainer = new() { Dock = DockStyle.Fill };
     private readonly Panel _processView = new() { Dock = DockStyle.Fill };
     private readonly Panel _gpuView = new() { Dock = DockStyle.Fill };
@@ -24,7 +24,7 @@ internal sealed partial class MainForm : Form
     private readonly TextBox _searchBox = new();
     private readonly CheckBox _vramFilterCheck = new() { Text = "Only VRAM active" };
     private readonly ComboBox _gpuSelector = new();
-    private readonly Button _refreshButton = new();
+    private readonly ThemedButton _refreshButton = new();
     private readonly Label _currentValue = CreateValueLabel();
     private readonly Label _peakValue = CreateValueLabel();
     private readonly Label _averageValue = CreateValueLabel();
@@ -47,8 +47,8 @@ internal sealed partial class MainForm : Form
     private readonly System.Windows.Forms.Timer _processRefreshTimer = new() { Interval = 10000 };
     // Debounced so dragging the overlay or toggling options writes the file once, not per event.
     private readonly System.Windows.Forms.Timer _saveTimer = new() { Interval = 1500 };
-    private readonly Label _hotkeyInfo = new() { AutoSize = true, ForeColor = SystemColors.GrayText, Tag = AppTheme.MutedTag, Margin = new Padding(0, 0, 0, 16) };
-    private readonly Label _shortcutHint = new() { AutoSize = true, ForeColor = SystemColors.GrayText, Tag = AppTheme.MutedTag, Margin = new Padding(8, 8, 0, 0) };
+    private readonly Label _hotkeyInfo = new() { AutoSize = true, ForeColor = SystemColors.GrayText, Tag = AppTheme.MutedTag, Margin = new Padding(0, 0, 0, 16), UseMnemonic = false };
+    private readonly Label _shortcutHint = new() { AutoSize = true, ForeColor = SystemColors.GrayText, Tag = AppTheme.MutedTag, Margin = new Padding(0, 11, 0, 0), UseMnemonic = false };
     private readonly AppSettings _settings = SettingsStore.Load();
     private readonly NotifyIcon _notifyIcon = new();
     private readonly ContextMenuStrip _trayMenu = new();
@@ -103,13 +103,12 @@ internal sealed partial class MainForm : Form
         // fonts still grow with the display scale, but fixed row heights and buttons do not, and clip them.
         AutoScaleDimensions = new SizeF(96f, 96f);
         AutoScaleMode = AutoScaleMode.Dpi;
-        ClientSize = new Size(620, 480);
-        MinimumSize = new Size(540, 430);
+        // Tall enough for five metric cards without scrolling; the cards no longer stretch to fill it.
+        ClientSize = new Size(640, 540);
+        MinimumSize = new Size(600, 580);
         FormBorderStyle = FormBorderStyle.Sizable;
         Font = new Font("Segoe UI", 9f);
 
-        _cornerMenu.Renderer = new DarkMenuRenderer();
-        _trayMenu.Renderer = new DarkMenuRenderer();
         _processTracker.RememberedName = _settings.SelectedProcessName;
 
         BuildLayout();
@@ -130,6 +129,8 @@ internal sealed partial class MainForm : Form
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
+        // The handle is recreated whenever ShowInTaskbar changes, and the caption colour goes with it.
+        AppTheme.ApplyTitleBar(this, _palette.IsDark);
         RegisterHotKeys();
     }
 

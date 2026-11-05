@@ -38,6 +38,11 @@ internal static class Program
         };
 
         ApplicationConfiguration.Initialize();
+        // Lets the controls Nook does not draw itself (combo box arrows, check boxes, scroll bars)
+        // follow the Windows dark theme, matching the colours AppTheme gives everything else.
+#pragma warning disable WFO5001 // Dark mode is still flagged experimental in WinForms.
+        Application.SetColorMode(SystemColorMode.System);
+#pragma warning restore WFO5001
         Log.Info($"Nook {GetVersion()} starting on {Environment.OSVersion}, {RuntimeInformation.FrameworkDescription}");
         var window = new MainForm();
         var showRegistration = ThreadPool.RegisterWaitForSingleObject(

@@ -4,35 +4,43 @@ namespace Nook;
 
 internal sealed partial class MainForm
 {
+    private const int MetricCardHeight = 40;
+    private const int MetricCardGap = 6;
+
+    private readonly List<Label> _valueLabels = [];
+    private ThemePalette _palette = AppTheme.Current();
+
     private void BuildLayout()
     {
         var root = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(18, 16, 18, 14),
+            Padding = new Padding(18, 14, 18, 10),
             ColumnCount = 1,
             RowCount = 5
         };
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 56)); // Header
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 36)); // Nav Bar
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 58)); // Header
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 46)); // Nav Bar
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); // Content
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // Status Bar
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 38)); // Bottom Controls
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 28)); // Status Bar
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 40)); // Bottom Controls
 
         // Header Layout
         var header = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, Margin = Padding.Empty };
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        header.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
+        header.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
         header.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
         var title = new Label { Text = "Nook", Dock = DockStyle.Fill, Font = new Font("Segoe UI Semibold", 15.5f), TextAlign = ContentAlignment.BottomLeft, AccessibleName = "Application title" };
-        var subtitle = new Label { Text = "Per-process GPU memory, load, temperature and clock", Dock = DockStyle.Fill, ForeColor = SystemColors.GrayText, Tag = AppTheme.MutedTag, TextAlign = ContentAlignment.TopLeft };
-        var cadence = new Label { Text = "WINDOWS-NATIVE  •  1 SECOND", AutoSize = true, Anchor = AnchorStyles.Right | AnchorStyles.Bottom, Font = new Font("Segoe UI Semibold", 8f), Padding = new Padding(10, 5, 10, 5), Tag = AppTheme.AccentBadgeTag };
+        // AutoEllipsis: a narrow window would otherwise wrap the subtitle onto a second, clipped line.
+        var subtitle = new Label { Text = "Per-process GPU memory, load, temperature and clock", Dock = DockStyle.Fill, ForeColor = SystemColors.GrayText, Tag = AppTheme.MutedTag, TextAlign = ContentAlignment.TopLeft, AutoEllipsis = true };
+        var cadence = new Label { Text = "WINDOWS-NATIVE  ·  1 SECOND", AutoSize = true, Anchor = AnchorStyles.Right | AnchorStyles.Bottom, Font = new Font("Segoe UI Semibold", 7.5f), Padding = new Padding(8, 4, 8, 4), Margin = new Padding(12, 0, 0, 2), Tag = AppTheme.AccentBadgeTag };
         header.Controls.Add(title, 0, 0);
-        header.Controls.Add(subtitle, 0, 1);
         header.Controls.Add(cadence, 1, 0);
-        header.SetRowSpan(cadence, 2);
+        // Spans the badge column too, so the full subtitle fits at the default width.
+        header.Controls.Add(subtitle, 0, 1);
+        header.SetColumnSpan(subtitle, 2);
 
         // Segmented Nav Bar
         var navBar = new FlowLayoutPanel
@@ -40,7 +48,7 @@ internal sealed partial class MainForm
             Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = false,
-            Margin = new Padding(0, 4, 0, 4)
+            Margin = new Padding(0, 6, 0, 10)
         };
 
         _navProcessBtn.Click += (_, _) => SwitchView("Process");
@@ -53,6 +61,7 @@ internal sealed partial class MainForm
         BuildGpuView(_gpuView);
         BuildSettingsView(_settingsView);
 
+        _contentContainer.Margin = Padding.Empty;
         _contentContainer.Controls.Add(_processView);
         _contentContainer.Controls.Add(_gpuView);
         _contentContainer.Controls.Add(_settingsView);
@@ -68,17 +77,18 @@ internal sealed partial class MainForm
 
         // Bottom Commands Bar
         _overlayVisible.AutoSize = true;
-        _overlayVisible.Margin = new Padding(0, 7, 14, 0);
+        _overlayVisible.Margin = new Padding(0, 9, 16, 0);
         _overlayVisible.AccessibleName = "Show overlay";
         _overlayVisible.CheckedChanged += (_, _) => SetOverlayVisibility(_overlayVisible.Checked);
 
         _overlayLocked.AutoSize = true;
-        _overlayLocked.Margin = new Padding(0, 7, 14, 0);
+        _overlayLocked.Margin = new Padding(0, 9, 16, 0);
         _overlayLocked.AccessibleName = "Lock overlay click-through mode";
         _overlayLocked.CheckedChanged += (_, _) => SetOverlayLock(_overlayLocked.Checked);
 
         var commands = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Margin = Padding.Empty, AccessibleName = "Overlay controls" };
-        var corners = CreateActionButton("Position", "Choose overlay corner position");
+        var corners = CreateActionButton("Position  ▾", "Move the overlay to a screen corner");
+        corners.AccessibleName = "Overlay position";
         corners.Click += (_, _) => ShowCornerMenu(corners);
         AddCornerMenuItem("Top left", OverlayCorner.TopLeft);
         AddCornerMenuItem("Top right", OverlayCorner.TopRight);
@@ -95,11 +105,10 @@ internal sealed partial class MainForm
         Controls.Add(root);
     }
 
-    private static Button CreateNavButton(string text) => new()
+    private static ThemedButton CreateNavButton(string text) => new()
     {
         Text = text,
-        Size = new Size(100, 28),
-        FlatStyle = FlatStyle.Flat,
+        Size = new Size(96, 30),
         Margin = new Padding(0, 0, 6, 0),
         Font = new Font("Segoe UI Semibold", 9f),
         Tag = AppTheme.NavButtonTag
@@ -108,13 +117,21 @@ internal sealed partial class MainForm
     private void SwitchView(string viewName)
     {
         _currentView = viewName;
-        _processView.Visible = viewName == "Process";
-        _gpuView.Visible = viewName == "GPU";
-        _settingsView.Visible = viewName == "Settings";
+        var views = new[] { ("Process", _processView, _navProcessBtn), ("GPU", _gpuView, _navGpuBtn), ("Settings", _settingsView, _navSettingsBtn) };
 
-        AppTheme.StyleNavButton(_navProcessBtn, viewName == "Process");
-        AppTheme.StyleNavButton(_navGpuBtn, viewName == "GPU");
-        AppTheme.StyleNavButton(_navSettingsBtn, viewName == "Settings");
+        // The new view is shown before the old one is hidden, so the content area never paints empty in between.
+        foreach (var (name, view, _) in views)
+        {
+            if (name == viewName) view.Visible = true;
+        }
+
+        foreach (var (name, view, button) in views)
+        {
+            var active = name == viewName;
+            view.Visible = active;
+            AppTheme.StyleNavButton(button, active, _palette);
+            button.AccessibleDescription = active ? "Current view" : null;
+        }
     }
 
     private void BuildProcessView(Panel container)
@@ -122,9 +139,9 @@ internal sealed partial class MainForm
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, Margin = Padding.Empty };
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36)); // Filter Row
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36)); // Selection Row
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28)); // Source Label Row
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // Source Label Row
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); // Metrics Panel Row
-        
+
         // Filter / Search Row
         var filterRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, Margin = Padding.Empty };
         filterRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 78));
@@ -133,8 +150,10 @@ internal sealed partial class MainForm
 
         var searchLabel = new Label { Text = "Search", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Segoe UI Semibold", 9f) };
         _searchBox.Dock = DockStyle.Fill;
-        _searchBox.Margin = new Padding(0, 3, 8, 3);
-        _searchBox.PlaceholderText = "Type process name...";
+        _searchBox.Margin = new Padding(0, 5, 12, 5);
+        _searchBox.BorderStyle = BorderStyle.FixedSingle;
+        _searchBox.PlaceholderText = "Filter by process name…";
+        _searchBox.AccessibleName = "Filter processes by name";
         _searchBox.TextChanged += (_, _) => ApplyProcessFilters();
 
         _vramFilterCheck.Dock = DockStyle.Fill;
@@ -157,7 +176,7 @@ internal sealed partial class MainForm
         _processSelector.SelectedIndexChanged += (_, _) => SelectProcess();
 
         _refreshButton.Text = "Refresh";
-        StyleActionButton(_refreshButton, "Refresh running process list");
+        StyleActionButton(_refreshButton, "Reload the list of running processes");
         _refreshButton.Click += (_, _) => RefreshProcesses();
 
         var source = CreateSourceLabel("Windows-reported GPU memory for the selected process");
@@ -181,7 +200,7 @@ internal sealed partial class MainForm
     {
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Margin = Padding.Empty };
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36)); // Selection Row
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28)); // Source Label Row
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // Source Label Row
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); // Metrics Panel Row
 
         var selection = CreateSelectionRow("GPU", _gpuSelector, null);
@@ -194,8 +213,8 @@ internal sealed partial class MainForm
             ("Usage (engine)", _gpuUsageValue),
             ("Dedicated VRAM", _gpuMemoryValue),
             ("Shared memory", _gpuSharedValue),
-            ("GPU Temperature", _gpuTempValue),
-            ("Core Clock Speed", _gpuClockValue)
+            ("Temperature", _gpuTempValue),
+            ("Core clock", _gpuClockValue)
         });
 
         layout.Controls.Add(selection, 0, 0);
@@ -212,10 +231,11 @@ internal sealed partial class MainForm
             FlowDirection = FlowDirection.TopDown,
             WrapContents = false,
             AutoScroll = true,
-            Padding = new Padding(12, 10, 12, 10)
+            // No side padding, so section headers line up with the labels on the other views.
+            Padding = new Padding(3, 8, 0, 4)
         };
 
-        var trayHeader = new Label { Text = "System Tray and Startup", Font = new Font("Segoe UI Semibold", 10f), AutoSize = true, Margin = new Padding(0, 0, 0, 8) };
+        var trayHeader = CreateSectionHeader("System tray and startup");
         var minimizeCheck = new CheckBox { Text = "Minimize window to system tray", AutoSize = true, Checked = _settings.MinimizeToTray, Margin = new Padding(0, 0, 0, 6) };
         minimizeCheck.CheckedChanged += (_, _) =>
         {
@@ -230,7 +250,7 @@ internal sealed partial class MainForm
             RequestSave();
         };
 
-        var startupCheck = new CheckBox { Text = "Start automatically with Windows", AutoSize = true, Checked = _settings.StartWithWindows, Margin = new Padding(0, 0, 0, 16) };
+        var startupCheck = new CheckBox { Text = "Start automatically with Windows", AutoSize = true, Checked = _settings.StartWithWindows, Margin = new Padding(0, 0, 0, 20) };
         startupCheck.CheckedChanged += (_, _) =>
         {
             _settings.StartWithWindows = startupCheck.Checked;
@@ -238,31 +258,42 @@ internal sealed partial class MainForm
             RequestSave();
         };
 
-        var hotkeyHeader = new Label { Text = "Global Hotkeys", Font = new Font("Segoe UI Semibold", 10f), AutoSize = true, Margin = new Padding(0, 0, 0, 8) };
+        var hotkeyHeader = CreateSectionHeader("Global shortcuts");
 
         panel.Controls.AddRange([trayHeader, minimizeCheck, closeCheck, startupCheck, hotkeyHeader, _hotkeyInfo]);
         container.Controls.Add(panel);
     }
 
-    private static TableLayoutPanel CreateSelectionRow(string labelText, ComboBox selector, Button? action)
+    private static Label CreateSectionHeader(string text) => new()
+    {
+        Text = text,
+        Font = new Font("Segoe UI Semibold", 10f),
+        AutoSize = true,
+        Margin = new Padding(0, 0, 0, 8)
+    };
+
+    private static TableLayoutPanel CreateSelectionRow(string labelText, ComboBox selector, ThemedButton? action)
     {
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = action is null ? 2 : 3, RowCount = 1, Margin = Padding.Empty };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 78));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         if (action is not null)
         {
-            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 94));
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 104));
         }
 
         var label = new Label { Text = labelText, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Segoe UI Semibold", 9f) };
         selector.Dock = DockStyle.Fill;
-        selector.Margin = new Padding(0, 3, action is null ? 0 : 8, 3);
+        // Flat lets the closed DropDownList take the theme's colours instead of a white system face.
+        selector.FlatStyle = FlatStyle.Flat;
+        selector.Margin = new Padding(0, 5, action is null ? 0 : 12, 3);
         layout.Controls.Add(label, 0, 0);
         layout.Controls.Add(selector, 1, 0);
         if (action is not null)
         {
             action.Dock = DockStyle.Fill;
-            action.Margin = new Padding(0, 2, 0, 2);
+            // Same top and height as the combo box beside it.
+            action.Margin = new Padding(0, 5, 0, 8);
             layout.Controls.Add(action, 2, 0);
         }
 
@@ -273,48 +304,53 @@ internal sealed partial class MainForm
     {
         Text = text,
         Dock = DockStyle.Fill,
-        ForeColor = AppTheme.Accent,
         Font = new Font("Segoe UI Semibold", 8.5f),
         TextAlign = ContentAlignment.MiddleLeft,
         UseMnemonic = false, // otherwise "&" is swallowed as an access-key prefix
         Tag = AppTheme.AccentTextTag
     };
 
-    private Button CreateActionButton(string text, string toolTip)
+    private ThemedButton CreateActionButton(string text, string toolTip)
     {
-        var button = new Button { Text = text, AutoSize = false, Size = new Size(94, 29) };
+        var button = new ThemedButton { Text = text, AutoSize = false, Size = new Size(104, 30), Margin = new Padding(0, 5, 14, 5) };
         StyleActionButton(button, toolTip);
         return button;
     }
 
-    private void StyleActionButton(Button button, string toolTip)
+    private void StyleActionButton(ThemedButton button, string toolTip)
     {
-        button.FlatStyle = FlatStyle.Flat;
-        button.FlatAppearance.BorderSize = 1;
         button.Tag = AppTheme.ActionButtonTag;
         button.AccessibleName = button.Text;
-        button.MouseEnter += (_, _) => button.BackColor = AppTheme.Accent;
-        button.MouseLeave += (_, _) => AppTheme.StyleActionButtonIdle(button, AppTheme.Current());
-        button.MouseDown += (_, _) => button.BackColor = AppTheme.AccentPressed;
-        button.MouseUp += (_, _) => button.BackColor = AppTheme.Accent;
+        button.AccessibleDescription = toolTip;
+        AppTheme.StyleActionButton(button, _palette);
         _toolTip.SetToolTip(button, toolTip);
     }
 
-    private static TableLayoutPanel CreateMetricsPanel((string Name, Label Value)[] metrics)
+    /// <summary>
+    /// Fixed-height cards stacked from the top. Stretching them to fill the view made them balloon in a
+    /// maximized window and crushed the values in a small one; the panel scrolls if they do not fit.
+    /// </summary>
+    private TableLayoutPanel CreateMetricsPanel((string Name, Label Value)[] metrics)
     {
         var rowCount = metrics.Length;
-        var panel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = rowCount, Margin = new Padding(0, 4, 0, 0) };
+        var panel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = rowCount + 1, Margin = new Padding(0, 2, 0, 0), AutoScroll = true };
         for (var row = 0; row < rowCount; row++)
         {
-            panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100f / rowCount));
-            var card = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0, row == 0 ? 0 : 6, 0, 0), Padding = new Padding(14, 0, 14, 0), Tag = AppTheme.MetricCardTag };
-            var label = new Label { Text = metrics[row].Name, Dock = DockStyle.Left, Width = 230, TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Segoe UI Semibold", 9f), AccessibleName = $"{metrics[row].Name} label" };
-            metrics[row].Value.AccessibleName = metrics[row].Name;
-            card.Controls.Add(metrics[row].Value);
+            var gap = row == 0 ? 0 : MetricCardGap;
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, MetricCardHeight + gap));
+            var card = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0, gap, 0, 0), Padding = new Padding(14, 0, 14, 0), Tag = AppTheme.MetricCardTag };
+            // Muted and regular so the value, not its caption, is what the eye lands on.
+            var label = new Label { Text = metrics[row].Name, Dock = DockStyle.Left, Width = 200, TextAlign = ContentAlignment.MiddleLeft, Tag = AppTheme.MutedTag, AccessibleName = $"{metrics[row].Name} label" };
+            var value = metrics[row].Value;
+            value.AccessibleName = metrics[row].Name;
+            value.TextChanged += (_, _) => StyleValueLabel(value);
+            _valueLabels.Add(value);
+            card.Controls.Add(value);
             card.Controls.Add(label);
             panel.Controls.Add(card, 0, row);
         }
 
+        panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         return panel;
     }
 
@@ -323,15 +359,40 @@ internal sealed partial class MainForm
         Dock = DockStyle.Fill,
         Text = "—",
         TextAlign = ContentAlignment.MiddleRight,
-        Font = new Font("Segoe UI Semibold", 15f)
+        Font = new Font("Segoe UI Semibold", 14f),
+        AutoEllipsis = true
     };
+
+    /// <summary>
+    /// Readings always contain a digit; "—", "Unavailable" and "No driver sensor" do not. Those are
+    /// shown muted so a missing sensor does not read as loudly as a real number.
+    /// </summary>
+    private void StyleValueLabel(Label value)
+    {
+        var color = value.Text.Any(char.IsAsciiDigit) ? _palette.Foreground : _palette.Muted;
+        if (value.ForeColor != color)
+        {
+            value.ForeColor = color;
+        }
+    }
 
     private void ApplyTheme()
     {
-        var colors = AppTheme.Current();
-        BackColor = colors.Background;
-        ForeColor = colors.Foreground;
-        AppTheme.Apply(this, colors);
+        _palette = AppTheme.Current();
+        BackColor = _palette.Background;
+        ForeColor = _palette.Foreground;
+        AppTheme.Apply(this, _palette);
+        foreach (var value in _valueLabels)
+        {
+            StyleValueLabel(value);
+        }
+
+        // Owner-drawn dark menus only belong to a dark window; light and high-contrast use the system look.
+        ToolStripRenderer menuRenderer = _palette.IsDark ? new DarkMenuRenderer() : new ToolStripProfessionalRenderer();
+        _cornerMenu.Renderer = menuRenderer;
+        _trayMenu.Renderer = menuRenderer;
+        AppTheme.ApplyTitleBar(this, _palette.IsDark);
+
         // Not read back from Visible: before the window is shown every panel reports false.
         SwitchView(_currentView);
     }
