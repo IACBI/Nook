@@ -7,6 +7,8 @@ internal sealed partial class MainForm
     private const int MetricCardHeight = 40;
     private const int MetricCardGap = 6;
 
+    private static readonly string[] ViewOrder = ["Process", "GPU", "Settings"];
+
     private readonly List<Label> _valueLabels = [];
     private ThemePalette _palette = AppTheme.Current();
 
@@ -54,6 +56,9 @@ internal sealed partial class MainForm
         _navProcessBtn.Click += (_, _) => SwitchView("Process");
         _navGpuBtn.Click += (_, _) => SwitchView("GPU");
         _navSettingsBtn.Click += (_, _) => SwitchView("Settings");
+        _toolTip.SetToolTip(_navProcessBtn, "Per-process GPU memory (Ctrl+1)");
+        _toolTip.SetToolTip(_navGpuBtn, "Adapter load, memory and sensors (Ctrl+2)");
+        _toolTip.SetToolTip(_navSettingsBtn, "Tray, startup and shortcuts (Ctrl+3)");
         navBar.Controls.AddRange([_navProcessBtn, _navGpuBtn, _navSettingsBtn]);
 
         // Views
@@ -132,6 +137,28 @@ internal sealed partial class MainForm
             AppTheme.StyleNavButton(button, active, _palette);
             button.AccessibleDescription = active ? "Current view" : null;
         }
+    }
+
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        var index = Array.IndexOf(ViewOrder, _currentView);
+        var target = keyData switch
+        {
+            Keys.Control | Keys.D1 => 0,
+            Keys.Control | Keys.D2 => 1,
+            Keys.Control | Keys.D3 => 2,
+            Keys.Control | Keys.Tab => (index + 1) % ViewOrder.Length,
+            Keys.Control | Keys.Shift | Keys.Tab => (index + ViewOrder.Length - 1) % ViewOrder.Length,
+            _ => -1
+        };
+
+        if (target < 0)
+        {
+            return base.ProcessCmdKey(ref msg, keyData);
+        }
+
+        SwitchView(ViewOrder[target]);
+        return true;
     }
 
     private void BuildProcessView(Panel container)
