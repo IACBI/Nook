@@ -76,6 +76,8 @@ The overlay is controlled from the bottom bar, or from anywhere with two shortcu
 
 While the overlay is draggable it shows a `MOVE` badge and a dashed border. Drag it where you want it, then lock it again so clicks pass straight through to the game underneath.
 
+Inside the window, `Ctrl+1`, `Ctrl+2` and `Ctrl+3` open the Process, GPU and Settings tabs, and `Ctrl+Tab` steps through them.
+
 ### Configuration
 
 Settings live in `%LocalAppData%\Nook\settings.json` and are saved a moment after each change. The file holds the selected GPU and process, the overlay position and lock state, the tray preferences, and the two shortcuts as Windows virtual-key and modifier values.
@@ -165,6 +167,8 @@ Overlay alttaki çubuktan ya da her yerden çalışan iki kısayolla yönetilir:
 | `Ctrl+Shift+L` | Tıklamaları geçiren mod ile sürüklenebilir mod arasında geçiş yap |
 
 Sürüklenebilir moddayken overlay'de bir `MOVE` etiketi ve kesikli bir çerçeve görünür. Overlay'i istediğiniz yere taşıyın, sonra yeniden kilitleyin; tıklamalar doğrudan alttaki oyuna geçer.
+
+Pencere açıkken `Ctrl+1`, `Ctrl+2` ve `Ctrl+3` sırasıyla Process, GPU ve Settings sekmelerini açar; `Ctrl+Tab` ile sekmeler arasında sırayla dolaşabilirsiniz.
 
 ### Yapılandırma
 
